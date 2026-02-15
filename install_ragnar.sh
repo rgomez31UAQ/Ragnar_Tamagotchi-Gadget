@@ -1264,17 +1264,19 @@ main() {
                 read -p "Enter Pager IP address [172.16.42.1]: " pager_ip
                 pager_ip="${pager_ip:-172.16.42.1}"
 
+                pager_exit_code=0
                 if [ -f "$ragnar_PATH/install_pineapple_pager.sh" ]; then
                     chmod +x "$ragnar_PATH/install_pineapple_pager.sh"
-                    bash "$ragnar_PATH/install_pineapple_pager.sh" "$pager_ip"
+                    bash "$ragnar_PATH/install_pineapple_pager.sh" "$pager_ip" || pager_exit_code=$?
                 elif [ -f "$(dirname "$0")/install_pineapple_pager.sh" ]; then
                     chmod +x "$(dirname "$0")/install_pineapple_pager.sh"
-                    bash "$(dirname "$0")/install_pineapple_pager.sh" "$pager_ip"
+                    bash "$(dirname "$0")/install_pineapple_pager.sh" "$pager_ip" || pager_exit_code=$?
                 else
                     log "ERROR" "install_pineapple_pager.sh not found"
                     log "INFO" "Run it directly: ./install_pineapple_pager.sh $pager_ip"
+                    pager_exit_code=1
                 fi
-                clean_exit 0
+                clean_exit $pager_exit_code
                 ;;
             *)
                 log "ERROR" "Invalid option selected"
@@ -1305,13 +1307,15 @@ main() {
                 read -p "Enter Pager IP address [172.16.42.1]: " pager_ip
                 pager_ip="${pager_ip:-172.16.42.1}"
 
+                pager_exit_code=0
                 if [ -f "$(dirname "$0")/install_pineapple_pager.sh" ]; then
                     chmod +x "$(dirname "$0")/install_pineapple_pager.sh"
-                    bash "$(dirname "$0")/install_pineapple_pager.sh" "$pager_ip"
+                    bash "$(dirname "$0")/install_pineapple_pager.sh" "$pager_ip" || pager_exit_code=$?
                 else
                     log "ERROR" "install_pineapple_pager.sh not found"
+                    pager_exit_code=1
                 fi
-                clean_exit 0
+                clean_exit $pager_exit_code
                 ;;
             *)
                 log "ERROR" "Invalid option selected"
