@@ -443,7 +443,7 @@ if [[ -f "$MIGRATE_SCRIPT" ]]; then
     cat >"$MIGRATE_SERVICE" <<EOF
 [Unit]
 Description=Ragnar Pwnagotchi Migration Check
-After=local-fs.target network.target
+After=local-fs.target network-online.target
 Before=pwnagotchi.service ragnar.service
 ConditionPathExists=/opt/pwnagotchi
 

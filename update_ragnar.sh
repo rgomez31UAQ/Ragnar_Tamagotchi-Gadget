@@ -149,7 +149,7 @@ if [[ -d "/opt/pwnagotchi" ]] && [[ -f "$MIGRATE_SCRIPT" ]]; then
         cat >"/etc/systemd/system/ragnar-pwn-migrate.service" <<SVCEOF
 [Unit]
 Description=Ragnar Pwnagotchi Migration Check
-After=local-fs.target network.target
+After=local-fs.target network-online.target
 Before=pwnagotchi.service ragnar.service
 ConditionPathExists=/opt/pwnagotchi
 

@@ -63,25 +63,42 @@ if [[ -f "$CONFIG_DIR/id_rsa" ]]; then
     echo "[MIGRATE] RSA keys preserved (in-place, not touched)."
 fi
 
-# Remove old installation
-echo "[MIGRATE] Removing old pwnagotchi installation..."
-rm -rf "$PWN_DIR"
-
-# Uninstall old pip package
-echo "[MIGRATE] Uninstalling old pwnagotchi pip package..."
-python3 -m pip uninstall -y pwnagotchi 2>/dev/null || true
+# Move old installation to backup (don't delete yet — rollback if clone fails)
+PWN_BACKUP="${PWN_DIR}.old_backup"
+echo "[MIGRATE] Moving old pwnagotchi to ${PWN_BACKUP}..."
+rm -rf "$PWN_BACKUP"
+mv "$PWN_DIR" "$PWN_BACKUP"
 
 # Clone new version
 echo "[MIGRATE] Cloning pwnagotchiworking..."
-git clone --depth 1 "$PWN_REPO" "$PWN_DIR"
+if ! git clone --depth 1 "$PWN_REPO" "$PWN_DIR"; then
+    echo "[MIGRATE] ERROR: git clone failed (no network?). Restoring old version."
+    mv "$PWN_BACKUP" "$PWN_DIR"
+    exit 1
+fi
+
+# Uninstall old pip package before installing new one
+echo "[MIGRATE] Uninstalling old pwnagotchi pip package..."
+python3 -m pip uninstall -y pwnagotchi 2>/dev/null || true
 
 # Install new version
 echo "[MIGRATE] Installing pwnagotchiworking (editable mode via pyproject.toml)..."
 cd "$PWN_DIR"
-python3 -m pip install --break-system-packages --use-pep517 -e . 2>&1 || {
-    echo "[MIGRATE] WARNING: pip install had issues, attempting without --use-pep517..."
-    python3 -m pip install --break-system-packages -e . 2>&1 || true
-}
+if ! python3 -m pip install --break-system-packages --use-pep517 -e . 2>&1; then
+    echo "[MIGRATE] WARNING: pip install with --use-pep517 failed, retrying without..."
+    if ! python3 -m pip install --break-system-packages -e . 2>&1; then
+        echo "[MIGRATE] ERROR: pip install failed. Restoring old version."
+        rm -rf "$PWN_DIR"
+        mv "$PWN_BACKUP" "$PWN_DIR"
+        # Reinstall old package so it works again
+        cd "$PWN_DIR" && python3 -m pip install --break-system-packages -e . 2>/dev/null || true
+        exit 1
+    fi
+fi
+
+# Clone and install succeeded — remove old backup
+echo "[MIGRATE] New version installed successfully. Removing old backup..."
+rm -rf "$PWN_BACKUP"
 
 # -------------------------------------------------------------------
 # MIGRATE CONFIG FORMAT (flat dot-notation → TOML tables)
