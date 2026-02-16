@@ -431,6 +431,44 @@ systemctl disable pwnagotchi >/dev/null 2>&1 || true
 systemctl stop pwnagotchi >/dev/null 2>&1 || true
 
 # -------------------------------------------------------------------
+# BOOT-TIME MIGRATION SERVICE
+# -------------------------------------------------------------------
+write_status "installing" "Setting up migration service" "migration_service"
+MIGRATE_SCRIPT="$REPO_ROOT/scripts/migrate_pwnagotchi.sh"
+MIGRATE_SERVICE="/etc/systemd/system/ragnar-pwn-migrate.service"
+
+if [[ -f "$MIGRATE_SCRIPT" ]]; then
+    chmod 755 "$MIGRATE_SCRIPT"
+
+    cat >"$MIGRATE_SERVICE" <<EOF
+[Unit]
+Description=Ragnar Pwnagotchi Migration Check
+After=local-fs.target network.target
+Before=pwnagotchi.service ragnar.service
+ConditionPathExists=/opt/pwnagotchi
+
+[Service]
+Type=oneshot
+ExecStart=${MIGRATE_SCRIPT}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    chmod 644 "$MIGRATE_SERVICE"
+    systemctl daemon-reload
+    systemctl enable ragnar-pwn-migrate >/dev/null 2>&1 || true
+    echo "[INFO] Boot-time migration service installed and enabled."
+
+    # Write marker since we just did a fresh install of the correct version
+    mkdir -p /var/lib/ragnar
+    date -Iseconds > /var/lib/ragnar/.pwn_migrated
+else
+    echo "[WARN] migrate_pwnagotchi.sh not found; skipping migration service setup."
+fi
+
+# -------------------------------------------------------------------
 # BETTERCAP SERVICE SYNC
 # -------------------------------------------------------------------
 if [[ -f "/usr/bin/bettercap-launcher" ]]; then
