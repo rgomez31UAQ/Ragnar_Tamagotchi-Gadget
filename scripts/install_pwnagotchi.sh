@@ -298,9 +298,11 @@ write_status "installing" "Detecting WiFi interfaces" "interface_detect"
 STATION_IFACE="${PWN_DATA_IFACE:-}"
 if [[ -z "$STATION_IFACE" ]]; then
     if ! STATION_IFACE=$(select_station_interface); then
-        echo "[ERROR] Unable to detect a wlan interface other than wlan0. Exiting." >&2
-        write_status "error" "Missing dedicated WiFi adapter for monitor mode. Please connect a USB WiFi adapter and try again." "interface_error"
-        exit 1
+        STATION_IFACE="wlan1"
+        echo "[WARN] No USB WiFi adapter detected. Defaulting to '${STATION_IFACE}'." >&2
+        echo "[WARN] Pwnagotchi will not work until a USB WiFi adapter is connected." >&2
+        echo "[WARN] Continuing installation so everything is ready when the adapter is plugged in." >&2
+        write_status "installing" "No WiFi adapter found - defaulting to wlan1. Connect adapter before starting." "interface_warn"
     fi
 fi
 MONITOR_IFACE_NAME="${PWN_MON_IFACE:-mon0}"
