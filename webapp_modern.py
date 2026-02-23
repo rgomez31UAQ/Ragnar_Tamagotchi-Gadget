@@ -451,7 +451,6 @@ def _collect_pwnagotchi_discovery_summary() -> dict:
             try:
                 recent.append({
                     'name': os.path.basename(file_path),
-                    'path': file_path,
                     'modified': datetime.fromtimestamp(os.path.getmtime(file_path), tz=timezone.utc).isoformat()
                 })
             except OSError:

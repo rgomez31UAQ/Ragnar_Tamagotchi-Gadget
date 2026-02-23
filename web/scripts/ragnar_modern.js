@@ -3661,10 +3661,10 @@ function updatePwnDiscoveredCard(status, visuals = null) {
     if (discoveriesContainer) {
         const combined = [];
         if (Array.isArray(discoveries.recent_handshakes)) {
-            combined.push(...discoveries.recent_handshakes.map(item => ({ ...item, _kind: 'handshake' })));
+            combined.push(...discoveries.recent_handshakes);
         }
         if (Array.isArray(discoveries.recent_discoveries)) {
-            combined.push(...discoveries.recent_discoveries.map(item => ({ ...item, _kind: 'discovery' })));
+            combined.push(...discoveries.recent_discoveries);
         }
         combined.sort((a, b) => new Date(b.modified || 0).getTime() - new Date(a.modified || 0).getTime());
         discoveriesContainer.innerHTML = formatPwnDiscoveryList(combined);
