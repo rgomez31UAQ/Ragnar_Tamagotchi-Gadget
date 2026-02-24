@@ -227,7 +227,7 @@ class AdvancedVulnScanner:
     # ZAP configuration
     ZAP_DEFAULT_PORT = 8090
     ZAP_API_KEY_LENGTH = 32
-    ZAP_STARTUP_TIMEOUT = 60  # seconds to wait for ZAP to start
+    ZAP_STARTUP_TIMEOUT = 90  # seconds to wait for ZAP to start (ARM override: 180s)
     ZAP_SCAN_POLICIES = ['Default Policy', 'Light', 'Medium', 'High']
 
     # Scan strength profiles for deep scanning
@@ -1924,6 +1924,31 @@ class AdvancedVulnScanner:
                          f"Cannot start ZAP daemon. Another process may be holding it.")
             return False
 
+        # Determine JVM heap cap so ZAP cannot consume all RAM and get
+        # OOM-killed.  Cap at ~25% of total RAM, with a floor of 512M
+        # and a ceiling of 2G (plenty for ZAP daemon mode).
+        jvm_xmx = '512m'  # safe fallback
+        try:
+            try:
+                import psutil
+                total_mb = psutil.virtual_memory().total // (1024 * 1024)
+            except ImportError:
+                # Fallback: read /proc/meminfo on Linux
+                with open('/proc/meminfo') as f:
+                    for line in f:
+                        if line.startswith('MemTotal'):
+                            total_mb = int(line.split()[1]) // 1024
+                            break
+                    else:
+                        total_mb = 0
+            if total_mb:
+                cap_mb = max(512, min(total_mb // 4, 2048))
+                jvm_xmx = f'{cap_mb}m'
+                logger.info(f"[ZAP-START] JVM heap cap: -Xmx{jvm_xmx} "
+                            f"(system RAM: {total_mb}MB)")
+        except Exception as e:
+            logger.debug(f"[ZAP-START] Could not determine RAM for heap cap: {e}")
+
         # Build command based on platform
         import sys
         is_windows = sys.platform == 'win32'
@@ -1937,6 +1962,9 @@ class AdvancedVulnScanner:
             '-config', 'api.addrs.addr.regex=true',
             '-config', 'connection.timeoutInSecs=120',
         ]
+
+        # Pass JVM memory limit via ZAP's -J flag (forwarded to java -Xmx)
+        cmd.insert(2, f'-J-Xmx{jvm_xmx}')
 
         logger.info(f"[ZAP-START] Command: {' '.join(cmd)}")
 
