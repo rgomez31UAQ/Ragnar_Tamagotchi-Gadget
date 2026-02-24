@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import csv
+import glob
 import signal
 import logging
 import threading
@@ -73,7 +74,6 @@ app.config['SECRET_KEY'] = auth_mgr.get_or_create_secret_key()
 app.config['JSON_SORT_KEYS'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
-# Enable CORS
 # Set up CORS if available
 if flask_cors_available:
     CORS(app)
@@ -412,6 +412,205 @@ def _systemctl_state_label(service_name: str) -> str:
     return 'unknown'
 
 
+_pwn_discovery_cache: Dict = {'data': None, 'timestamp': 0.0, 'dir_mtimes': {}}
+_PWN_DISCOVERY_CACHE_TTL = 30
+
+
+def _parse_pwnagotchi_filename(basename: str) -> Tuple[Optional[str], Optional[str], str]:
+    """Parse a Pwnagotchi capture filename into (ssid, bssid, extension).
+
+    Pwnagotchi names files as SSID_BSSID.ext where BSSID may use hex-only,
+    underscores, or colons.  Returns (ssid, bssid_colon_format, ext).
+    """
+    ext = ''
+    name = basename
+    for compound in ('.gps.json', '.hc22000', '.pcapng', '.netjson'):
+        if name.lower().endswith(compound):
+            ext = compound
+            name = name[:-len(compound)]
+            break
+    if not ext:
+        dot_pos = name.rfind('.')
+        if dot_pos > 0:
+            ext = name[dot_pos:]
+            name = name[:dot_pos]
+
+    if not name:
+        return None, None, ext
+
+    # Case 1: BSSID with colons  e.g. SSID_aa:bb:cc:dd:ee:ff
+    m = re.search(r'_([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})$', name)
+    if m:
+        return name[:m.start()] or None, m.group(1).lower(), ext
+
+    # Case 2: BSSID as 12 contiguous hex chars  e.g. SSID_aabbccddeeff
+    m = re.search(r'_([0-9a-fA-F]{12})$', name)
+    if m:
+        raw = m.group(1).lower()
+        bssid = ':'.join(raw[i:i + 2] for i in range(0, 12, 2))
+        return name[:m.start()] or None, bssid, ext
+
+    # Case 3: BSSID with underscores  e.g. SSID_aa_bb_cc_dd_ee_ff
+    m = re.search(
+        r'_([0-9a-fA-F]{2})_([0-9a-fA-F]{2})_([0-9a-fA-F]{2})'
+        r'_([0-9a-fA-F]{2})_([0-9a-fA-F]{2})_([0-9a-fA-F]{2})$', name)
+    if m:
+        bssid = ':'.join(m.group(i).lower() for i in range(1, 7))
+        return name[:m.start()] or None, bssid, ext
+
+    return name, None, ext
+
+
+def _read_gps_json_safe(filepath: str) -> Optional[dict]:
+    """Read a Pwnagotchi .gps.json file.  Returns dict with lat/lng or None."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+        lat = data.get('Latitude') or data.get('latitude')
+        lng = data.get('Longitude') or data.get('longitude')
+        if lat is None or lng is None:
+            return None
+        lat, lng = float(lat), float(lng)
+        if lat == 0.0 and lng == 0.0:
+            return None
+        return {
+            'latitude': lat,
+            'longitude': lng,
+            'altitude': data.get('Altitude') or data.get('altitude'),
+            'accuracy': data.get('Accuracy') or data.get('accuracy'),
+            'updated': data.get('Updated') or data.get('updated'),
+        }
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return None
+
+
+def _collect_pwnagotchi_discovery_summary() -> dict:
+    """Parse Pwnagotchi handshake/discovery files into grouped network data."""
+    global _pwn_discovery_cache
+
+    handshake_dirs = ['/root/handshakes', '/home/pi/handshakes']
+
+    current_mtimes: Dict[str, float] = {}
+    for d in handshake_dirs:
+        try:
+            current_mtimes[d] = os.path.getmtime(d)
+        except OSError:
+            pass
+
+    now = time.time()
+    if (_pwn_discovery_cache['data'] is not None
+            and (now - _pwn_discovery_cache['timestamp']) < _PWN_DISCOVERY_CACHE_TTL
+            and current_mtimes == _pwn_discovery_cache['dir_mtimes']):
+        return _pwn_discovery_cache['data']
+
+    handshake_exts = ('*.pcap', '*.pcapng', '*.22000', '*.hc22000')
+    discovery_exts = ('*.gps.json', '*.netjson', '*.json')
+
+    handshake_files: List[str] = []
+    discovery_files: List[str] = []
+    for d in handshake_dirs:
+        for ext in handshake_exts:
+            handshake_files.extend(glob.glob(os.path.join(d, ext)))
+        for ext in discovery_exts:
+            discovery_files.extend(glob.glob(os.path.join(d, ext)))
+
+    handshake_files = sorted(set(p for p in handshake_files if os.path.isfile(p)))
+    discovery_files = sorted(set(p for p in discovery_files if os.path.isfile(p)))
+
+    networks: Dict[Tuple[str, str], dict] = {}
+
+    def _get_or_create(ssid: Optional[str], bssid: Optional[str]) -> dict:
+        key = (ssid or 'Unknown', bssid or 'unknown')
+        if key not in networks:
+            networks[key] = {
+                'ssid': key[0], 'bssid': key[1],
+                'has_handshake': False, 'handshake_types': [],
+                'has_gps': False, 'gps': None, 'has_netjson': False,
+                'first_seen': None, 'last_seen': None,
+                'files': [],
+            }
+        return networks[key]
+
+    def _touch_ts(net: dict, fpath: str) -> None:
+        try:
+            ts = datetime.fromtimestamp(os.path.getmtime(fpath), tz=timezone.utc).isoformat()
+        except OSError:
+            return
+        if net['first_seen'] is None or ts < net['first_seen']:
+            net['first_seen'] = ts
+        if net['last_seen'] is None or ts > net['last_seen']:
+            net['last_seen'] = ts
+
+    def _file_entry(fpath: str) -> dict:
+        basename = os.path.basename(fpath)
+        try:
+            size = os.path.getsize(fpath)
+        except OSError:
+            size = 0
+        return {'name': basename, 'path': fpath, 'size': size}
+
+    for fpath in handshake_files:
+        ssid, bssid, ext = _parse_pwnagotchi_filename(os.path.basename(fpath))
+        net = _get_or_create(ssid, bssid)
+        net['has_handshake'] = True
+        label = ext.lstrip('.').upper() if ext else 'UNKNOWN'
+        if label not in net['handshake_types']:
+            net['handshake_types'].append(label)
+        net['files'].append(_file_entry(fpath))
+        _touch_ts(net, fpath)
+
+    for fpath in discovery_files:
+        ssid, bssid, ext = _parse_pwnagotchi_filename(os.path.basename(fpath))
+        net = _get_or_create(ssid, bssid)
+        net['files'].append(_file_entry(fpath))
+        _touch_ts(net, fpath)
+        if os.path.basename(fpath).lower().endswith('.gps.json'):
+            gps = _read_gps_json_safe(fpath)
+            if gps:
+                net['has_gps'] = True
+                net['gps'] = gps
+        elif os.path.basename(fpath).lower().endswith('.netjson'):
+            net['has_netjson'] = True
+
+    network_list = sorted(networks.values(), key=lambda n: n['last_seen'] or '', reverse=True)
+
+    combined = handshake_files + discovery_files
+    last_discovery = None
+    if combined:
+        try:
+            newest = max(combined, key=os.path.getmtime)
+            last_discovery = datetime.fromtimestamp(os.path.getmtime(newest), tz=timezone.utc).isoformat()
+        except OSError:
+            pass
+
+    def _recent_items(paths: List[str], limit: int = 5) -> List[dict]:
+        items: List[dict] = []
+        for fp in sorted(paths, key=lambda p: os.path.getmtime(p), reverse=True)[:limit]:
+            try:
+                items.append({
+                    'name': os.path.basename(fp),
+                    'modified': datetime.fromtimestamp(os.path.getmtime(fp), tz=timezone.utc).isoformat(),
+                })
+            except OSError:
+                continue
+        return items
+
+    result = {
+        'handshake_count': len(handshake_files),
+        'discovery_count': len(discovery_files),
+        'last_discovery': last_discovery,
+        'recent_handshakes': _recent_items(handshake_files),
+        'recent_discoveries': _recent_items(discovery_files),
+        'networks': network_list,
+        'network_count': len(network_list),
+        'networks_with_handshake': sum(1 for n in network_list if n['has_handshake']),
+        'networks_with_gps': sum(1 for n in network_list if n['has_gps']),
+    }
+
+    _pwn_discovery_cache = {'data': result, 'timestamp': now, 'dir_mtimes': current_mtimes}
+    return result
+
+
 def _build_pwnagotchi_status(persist: bool = True) -> dict:
     status = {
         'state': 'not_installed',
@@ -426,7 +625,14 @@ def _build_pwnagotchi_status(persist: bool = True) -> dict:
         'log_file': None,
         'config_file': None,
         'target_mode': shared_data.config.get('pwnagotchi_mode', 'ragnar'),
-        'timestamp': datetime.utcnow().isoformat() + 'Z'
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'discoveries': {
+            'handshake_count': 0,
+            'discovery_count': 0,
+            'last_discovery': None,
+            'recent_handshakes': [],
+            'recent_discoveries': []
+        }
     }
 
     file_data = _read_pwn_status_file()
@@ -561,6 +767,8 @@ def _build_pwnagotchi_status(persist: bool = True) -> dict:
 
     if persist and config_updates:
         _update_pwn_config(config_updates)
+
+    status['discoveries'] = _collect_pwnagotchi_discovery_summary()
 
     return status
 
@@ -6026,6 +6234,26 @@ def get_pwnagotchi_status():
     except Exception as e:
         logger.error(f"Error retrieving Pwnagotchi status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/pwnagotchi/download')
+def download_pwnagotchi_file():
+    """Download a Pwnagotchi handshake or discovery file."""
+    try:
+        filename = request.args.get('file', '')
+        if not filename or '/' in filename or '\\' in filename or '..' in filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+
+        allowed_dirs = ['/root/handshakes', '/home/pi/handshakes']
+        for d in allowed_dirs:
+            candidate = os.path.join(d, filename)
+            if os.path.isfile(candidate):
+                return send_from_directory(d, filename, as_attachment=True)
+
+        return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        logger.error(f"Error downloading Pwnagotchi file: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/pwnagotchi/install', methods=['POST'])
