@@ -3581,6 +3581,52 @@ function updatePwnButtons() {
     }
 }
 
+function _pwnBadgesHTML(net) {
+    let badges = '';
+    if (net.has_handshake) {
+        const types = (net.handshake_types || []).join(', ');
+        badges += `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fuchsia-900 bg-opacity-50 text-fuchsia-300" title="Handshake: ${escapeHtml(types)}">Handshake</span> `;
+    }
+    if (net.has_gps) {
+        badges += '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-900 bg-opacity-50 text-emerald-300" title="GPS coordinates available">GPS</span> ';
+    }
+    if (net.has_netjson) {
+        badges += '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900 bg-opacity-50 text-blue-300" title="Network metadata available">NetJSON</span> ';
+    }
+    return badges || '<span class="text-gray-500 text-xs">-</span>';
+}
+
+function _pwnGpsHTML(net) {
+    if (net.has_gps && net.gps) {
+        const lat = Number(net.gps.latitude).toFixed(5);
+        const lng = Number(net.gps.longitude).toFixed(5);
+        return `<span class="font-mono text-emerald-300" title="Lat: ${lat}, Lng: ${lng}">${lat}, ${lng}</span>`;
+    }
+    return '<span class="text-gray-500">-</span>';
+}
+
+function _pwnFileSizeLabel(bytes) {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function _pwnFilesHTML(files) {
+    if (!Array.isArray(files) || files.length === 0) return '';
+    return '<div class="flex flex-wrap gap-2 mt-2">' + files.map(f => {
+        const name = escapeHtml(f.name || '');
+        const size = _pwnFileSizeLabel(f.size);
+        const sizeLabel = size ? ` (${size})` : '';
+        const encodedName = encodeURIComponent(f.name || '');
+        return `<a href="/api/pwnagotchi/download?file=${encodedName}" download
+                    class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white transition-colors"
+                    title="Download ${name}${sizeLabel}">
+                    <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <span class="truncate max-w-[10rem]">${name}</span></a>`;
+    }).join('') + '</div>';
+}
+
 function displayPwnNetworksTable(networks) {
     const container = document.getElementById('pwn-networks-table');
     if (!container) return;
@@ -3595,46 +3641,61 @@ function displayPwnNetworksTable(networks) {
     const previewItems = networks.slice(0, previewCount);
     const hiddenItems = hasMore ? networks.slice(previewCount) : [];
 
+    /* --- Mobile card layout (shown < md) --- */
+    function networkCardHTML(net) {
+        const ssid = escapeHtml(net.ssid || 'Unknown');
+        const bssid = escapeHtml(net.bssid || 'Unknown');
+        const lastSeen = net.last_seen ? formatTimestamp(net.last_seen) : 'Unknown';
+        return `
+            <div class="bg-slate-800 bg-opacity-60 rounded-lg p-4">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <span class="text-white font-semibold text-sm break-all">${ssid}</span>
+                    <span class="text-xs text-gray-400 whitespace-nowrap">${lastSeen}</span>
+                </div>
+                <div class="text-xs text-gray-400 font-mono mb-2">${bssid}</div>
+                <div class="flex flex-wrap gap-1 mb-1">${_pwnBadgesHTML(net)}</div>
+                <div class="text-xs mt-1">${_pwnGpsHTML(net)}</div>
+                ${_pwnFilesHTML(net.files)}
+            </div>`;
+    }
+
+    /* --- Desktop table row (shown >= md) --- */
     function networkRowHTML(net) {
         const ssid = escapeHtml(net.ssid || 'Unknown');
         const bssid = escapeHtml(net.bssid || 'Unknown');
         const lastSeen = net.last_seen ? formatTimestamp(net.last_seen) : 'Unknown';
-
-        let badges = '';
-        if (net.has_handshake) {
-            const types = (net.handshake_types || []).join(', ');
-            badges += `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-fuchsia-900 bg-opacity-50 text-fuchsia-300" title="Handshake: ${escapeHtml(types)}">Handshake</span> `;
-        }
-        if (net.has_gps) {
-            badges += '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-900 bg-opacity-50 text-emerald-300" title="GPS coordinates available">GPS</span> ';
-        }
-        if (net.has_netjson) {
-            badges += '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-900 bg-opacity-50 text-blue-300" title="Network metadata available">NetJSON</span> ';
-        }
-        if (!badges) {
-            badges = '<span class="text-gray-500 text-xs">-</span>';
-        }
-
-        let gpsDisplay = '<span class="text-gray-500">-</span>';
-        if (net.has_gps && net.gps) {
-            const lat = Number(net.gps.latitude).toFixed(5);
-            const lng = Number(net.gps.longitude).toFixed(5);
-            gpsDisplay = `<span class="font-mono text-emerald-300" title="Lat: ${lat}, Lng: ${lng}">${lat}, ${lng}</span>`;
-        }
-
         return `
             <tr class="hover:bg-gray-700 transition-colors">
                 <td class="px-4 py-3 text-sm text-white font-semibold">${ssid}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 font-mono">${bssid}</td>
-                <td class="px-4 py-3 text-sm">${badges}</td>
-                <td class="px-4 py-3 text-sm">${gpsDisplay}</td>
+                <td class="px-4 py-3 text-sm">${_pwnBadgesHTML(net)}</td>
+                <td class="px-4 py-3 text-sm">${_pwnGpsHTML(net)}</td>
                 <td class="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">${lastSeen}</td>
-            </tr>
-        `;
+                <td class="px-4 py-3 text-sm">${_pwnFilesHTML(net.files)}</td>
+            </tr>`;
     }
 
-    let html = `
-        <div class="bg-gray-800 rounded-lg p-4">
+    /* --- Build mobile cards --- */
+    let mobileHTML = '<div class="md:hidden space-y-3">';
+    previewItems.forEach(net => { mobileHTML += networkCardHTML(net); });
+    if (hasMore) {
+        mobileHTML += `
+            <button onclick="togglePwnNetworksExpansion()"
+                    class="flex items-center justify-center w-full py-3 px-4 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white">
+                <span id="pwn-networks-expand-text-m">Show ${hiddenItems.length} more</span>
+                <svg id="pwn-networks-expand-arrow-m" class="w-4 h-4 ml-2 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            <div id="pwn-networks-hidden-m" class="hidden space-y-3">`;
+        hiddenItems.forEach(net => { mobileHTML += networkCardHTML(net); });
+        mobileHTML += '</div>';
+    }
+    mobileHTML += '</div>';
+
+    /* --- Build desktop table --- */
+    let tableHTML = `
+        <div class="hidden md:block bg-gray-800 rounded-lg p-4">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-700">
                     <thead>
@@ -3644,16 +3705,15 @@ function displayPwnNetworksTable(networks) {
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase">Data</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase">GPS</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase">Last Seen</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-300 uppercase">Files</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-700">
-    `;
-
-    previewItems.forEach(net => { html += networkRowHTML(net); });
-    html += '</tbody></table></div>';
+                    <tbody class="divide-y divide-gray-700">`;
+    previewItems.forEach(net => { tableHTML += networkRowHTML(net); });
+    tableHTML += '</tbody></table></div>';
 
     if (hasMore) {
-        html += `
+        tableHTML += `
             <div class="mt-4">
                 <button onclick="togglePwnNetworksExpansion()"
                         class="flex items-center justify-center w-full py-3 px-4 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white">
@@ -3665,33 +3725,36 @@ function displayPwnNetworksTable(networks) {
                 <div id="pwn-networks-hidden" class="hidden mt-2">
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-700">
-                            <tbody class="divide-y divide-gray-700">
-        `;
-        hiddenItems.forEach(net => { html += networkRowHTML(net); });
-        html += '</tbody></table></div></div></div>';
+                            <tbody class="divide-y divide-gray-700">`;
+        hiddenItems.forEach(net => { tableHTML += networkRowHTML(net); });
+        tableHTML += '</tbody></table></div></div></div>';
     }
+    tableHTML += '</div>';
 
-    html += '</div>';
-    container.innerHTML = html;
+    container.innerHTML = mobileHTML + tableHTML;
 }
 
 function togglePwnNetworksExpansion() {
-    const hidden = document.getElementById('pwn-networks-hidden');
-    const text = document.getElementById('pwn-networks-expand-text');
-    const arrow = document.getElementById('pwn-networks-expand-arrow');
-    if (!hidden || !text || !arrow) return;
-
-    const isHidden = hidden.classList.contains('hidden');
-    if (isHidden) {
-        hidden.classList.remove('hidden');
-        text.textContent = 'Show less';
-        arrow.style.transform = 'rotate(180deg)';
-    } else {
-        hidden.classList.add('hidden');
-        const count = hidden.querySelectorAll('tr').length;
-        text.textContent = `Show ${count} more networks`;
-        arrow.style.transform = 'rotate(0deg)';
-    }
+    /* Toggle both desktop and mobile overflow sections */
+    [['pwn-networks-hidden', 'pwn-networks-expand-text', 'pwn-networks-expand-arrow'],
+     ['pwn-networks-hidden-m', 'pwn-networks-expand-text-m', 'pwn-networks-expand-arrow-m']
+    ].forEach(([hiddenId, textId, arrowId]) => {
+        const hidden = document.getElementById(hiddenId);
+        const text = document.getElementById(textId);
+        const arrow = document.getElementById(arrowId);
+        if (!hidden) return;
+        const isHidden = hidden.classList.contains('hidden');
+        if (isHidden) {
+            hidden.classList.remove('hidden');
+            if (text) text.textContent = 'Show less';
+            if (arrow) arrow.style.transform = 'rotate(180deg)';
+        } else {
+            hidden.classList.add('hidden');
+            const count = hidden.querySelectorAll('tr, .bg-slate-800').length;
+            if (text) text.textContent = `Show ${count} more`;
+            if (arrow) arrow.style.transform = 'rotate(0deg)';
+        }
+    });
 }
 
 function updatePwnDiscoveredCard(status, visuals = null) {
@@ -3715,8 +3778,14 @@ function updatePwnDiscoveredCard(status, visuals = null) {
 
     const badge = document.getElementById('pwn-card-badge');
     if (badge) {
-        badge.textContent = resolvedVisuals.badgeText;
-        badge.className = `text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full ${resolvedVisuals.badgeClass}`;
+        const state = (status.state || '').toLowerCase();
+        if (state.includes('error') || state.includes('fail')) {
+            badge.classList.add('hidden');
+        } else {
+            badge.classList.remove('hidden');
+            badge.textContent = resolvedVisuals.badgeText;
+            badge.className = `text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full ${resolvedVisuals.badgeClass}`;
+        }
     }
 
     const discoveries = status.discoveries || {};

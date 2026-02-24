@@ -1433,32 +1433,30 @@
             </div>
 
             <!-- Pwnagotchi Discovered Networks (hidden until installed) -->
-            <div id="pwn-discovered-card" class="glass rounded-xl p-6 mb-6 hidden">
-                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-4">
+            <div id="pwn-discovered-card" class="glass rounded-xl p-4 md:p-6 mb-6 hidden">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                     <div>
-                        <h2 class="text-2xl font-bold">Pwnagotchi Captures</h2>
-                        <p class="text-sm text-gray-400">WiFi networks discovered by Pwnagotchi with captured handshakes and GPS data.</p>
+                        <h2 class="text-xl md:text-2xl font-bold">Pwnagotchi Captures</h2>
+                        <p class="text-xs md:text-sm text-gray-400">WiFi networks discovered by Pwnagotchi with captured handshakes and GPS data.</p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <span id="pwn-card-badge" class="text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-slate-700 text-slate-200">Status Pending</span>
-                    </div>
+                    <span id="pwn-card-badge" class="self-start sm:self-auto text-xs font-semibold uppercase tracking-wide px-3 py-1 rounded-full bg-slate-700 text-slate-200">Status Pending</span>
                 </div>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div class="bg-slate-800 bg-opacity-50 rounded-lg p-4">
-                        <div class="text-sm text-gray-400 mb-1">Networks</div>
-                        <div id="pwn-card-network-count" class="text-2xl font-bold text-white">0</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4">
+                    <div class="bg-slate-800 bg-opacity-50 rounded-lg p-3 md:p-4">
+                        <div class="text-xs md:text-sm text-gray-400 mb-1">Networks</div>
+                        <div id="pwn-card-network-count" class="text-xl md:text-2xl font-bold text-white">0</div>
                     </div>
-                    <div class="bg-fuchsia-900 bg-opacity-30 rounded-lg p-4">
-                        <div class="text-sm text-gray-400 mb-1">With Handshake</div>
-                        <div id="pwn-card-handshake-count" class="text-2xl font-bold text-fuchsia-400">0</div>
+                    <div class="bg-fuchsia-900 bg-opacity-30 rounded-lg p-3 md:p-4">
+                        <div class="text-xs md:text-sm text-gray-400 mb-1">Handshakes</div>
+                        <div id="pwn-card-handshake-count" class="text-xl md:text-2xl font-bold text-fuchsia-400">0</div>
                     </div>
-                    <div class="bg-emerald-900 bg-opacity-30 rounded-lg p-4">
-                        <div class="text-sm text-gray-400 mb-1">With GPS</div>
-                        <div id="pwn-card-gps-count" class="text-2xl font-bold text-emerald-400">0</div>
+                    <div class="bg-emerald-900 bg-opacity-30 rounded-lg p-3 md:p-4">
+                        <div class="text-xs md:text-sm text-gray-400 mb-1">With GPS</div>
+                        <div id="pwn-card-gps-count" class="text-xl md:text-2xl font-bold text-emerald-400">0</div>
                     </div>
-                    <div class="bg-blue-900 bg-opacity-30 rounded-lg p-4">
-                        <div class="text-sm text-gray-400 mb-1">Last Discovery</div>
-                        <div id="pwn-card-last-discovery" class="text-base font-semibold text-blue-400">None</div>
+                    <div class="bg-blue-900 bg-opacity-30 rounded-lg p-3 md:p-4">
+                        <div class="text-xs md:text-sm text-gray-400 mb-1">Last Seen</div>
+                        <div id="pwn-card-last-discovery" class="text-sm md:text-base font-semibold text-blue-400">None</div>
                     </div>
                 </div>
                 <div id="pwn-networks-table" class="overflow-x-auto">

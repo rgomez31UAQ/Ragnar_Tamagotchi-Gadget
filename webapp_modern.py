@@ -74,7 +74,6 @@ app.config['SECRET_KEY'] = auth_mgr.get_or_create_secret_key()
 app.config['JSON_SORT_KEYS'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
-# Enable CORS
 # Set up CORS if available
 if flask_cors_available:
     CORS(app)
@@ -528,6 +527,7 @@ def _collect_pwnagotchi_discovery_summary() -> dict:
                 'has_handshake': False, 'handshake_types': [],
                 'has_gps': False, 'gps': None, 'has_netjson': False,
                 'first_seen': None, 'last_seen': None,
+                'files': [],
             }
         return networks[key]
 
@@ -541,6 +541,14 @@ def _collect_pwnagotchi_discovery_summary() -> dict:
         if net['last_seen'] is None or ts > net['last_seen']:
             net['last_seen'] = ts
 
+    def _file_entry(fpath: str) -> dict:
+        basename = os.path.basename(fpath)
+        try:
+            size = os.path.getsize(fpath)
+        except OSError:
+            size = 0
+        return {'name': basename, 'path': fpath, 'size': size}
+
     for fpath in handshake_files:
         ssid, bssid, ext = _parse_pwnagotchi_filename(os.path.basename(fpath))
         net = _get_or_create(ssid, bssid)
@@ -548,11 +556,13 @@ def _collect_pwnagotchi_discovery_summary() -> dict:
         label = ext.lstrip('.').upper() if ext else 'UNKNOWN'
         if label not in net['handshake_types']:
             net['handshake_types'].append(label)
+        net['files'].append(_file_entry(fpath))
         _touch_ts(net, fpath)
 
     for fpath in discovery_files:
         ssid, bssid, ext = _parse_pwnagotchi_filename(os.path.basename(fpath))
         net = _get_or_create(ssid, bssid)
+        net['files'].append(_file_entry(fpath))
         _touch_ts(net, fpath)
         if os.path.basename(fpath).lower().endswith('.gps.json'):
             gps = _read_gps_json_safe(fpath)
@@ -6224,6 +6234,26 @@ def get_pwnagotchi_status():
     except Exception as e:
         logger.error(f"Error retrieving Pwnagotchi status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/pwnagotchi/download')
+def download_pwnagotchi_file():
+    """Download a Pwnagotchi handshake or discovery file."""
+    try:
+        filename = request.args.get('file', '')
+        if not filename or '/' in filename or '\\' in filename or '..' in filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+
+        allowed_dirs = ['/root/handshakes', '/home/pi/handshakes']
+        for d in allowed_dirs:
+            candidate = os.path.join(d, filename)
+            if os.path.isfile(candidate):
+                return send_from_directory(d, filename, as_attachment=True)
+
+        return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        logger.error(f"Error downloading Pwnagotchi file: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/pwnagotchi/install', methods=['POST'])
