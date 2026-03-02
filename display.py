@@ -30,6 +30,13 @@ import subprocess
 
 logger = Logger(name="display.py", level=logging.DEBUG)
 
+# Import button listener (only functional on Pi with GPIO)
+try:
+    from epd_button import EPDButtonListener, PAGE_MAIN, PAGE_NETWORK, PAGE_VULN
+except ImportError:
+    EPDButtonListener = None
+    PAGE_MAIN, PAGE_NETWORK, PAGE_VULN = 0, 1, 2
+
 class Display:
     def __init__(self, shared_data):
         """Initialize the display and start the main image and shared data update threads."""
@@ -77,6 +84,12 @@ class Display:
         # On 2.13" (122x250) this is 1.0 - no change
         # On 2.7" (176x264) push status/comment section down further
         self.y_stretch = 1.35 if self.scale_factor_x > 1.2 else 1.0
+
+        # Hardware button support (2.7" HAT has KEY1-KEY4)
+        self.button_listener = None
+        if self.scale_factor_x > 1.2 and EPDButtonListener is not None:
+            self.button_listener = EPDButtonListener(shared_data)
+            self.button_listener.start()
 
     def get_frise_position(self):
         """Get the frise position based on the display type."""
@@ -684,6 +697,80 @@ class Display:
             logger.error(f"Error checking USB connection status: {e}")
             return False
 
+    def _render_network_page(self, image, draw):
+        """Render Page 2: Network Scanner stats."""
+        w = self.shared_data.width
+        h = self.shared_data.height
+        font = self.shared_data.font_arial9
+        font_b = self.shared_data.font_arialbold
+        font_title = self.shared_data.font_viking
+
+        draw.rectangle((1, 1, w - 1, h - 1), outline=0)
+        draw.text((4, 4), "NETWORK SCAN", font=font_title, fill=0)
+        draw.line((1, 22, w - 1, 22), fill=0)
+
+        y = 28
+        line_h = 14
+        sd = self.shared_data
+
+        stats = [
+            ("Hosts found", str(getattr(sd, 'targetnbr', 0))),
+            ("Open ports", str(getattr(sd, 'portnbr', 0))),
+            ("Credentials", str(getattr(sd, 'crednbr', 0))),
+            ("Zombies", str(getattr(sd, 'zombiesnbr', 0))),
+            ("Data stolen", str(getattr(sd, 'datanbr', 0))),
+            ("Network KB", str(getattr(sd, 'networkkbnbr', 0))),
+            ("WiFi", "Connected" if sd.wifi_connected else "Disconnected"),
+            ("Status", str(getattr(sd, 'ragnarorch_status', 'IDLE'))),
+        ]
+
+        for label, value in stats:
+            draw.text((6, y), label, font=font, fill=0)
+            draw.text((w - 6 - font.getlength(value), y), value, font=font, fill=0)
+            y += line_h
+
+        # Footer
+        draw.line((1, h - 18, w - 1, h - 18), fill=0)
+        draw.text((4, h - 16), "KEY1:Main KEY3:Vuln KEY4:Restart", font=font, fill=0)
+
+    def _render_vuln_page(self, image, draw):
+        """Render Page 3: Vulnerability Scanner stats."""
+        w = self.shared_data.width
+        h = self.shared_data.height
+        font = self.shared_data.font_arial9
+        font_title = self.shared_data.font_viking
+
+        draw.rectangle((1, 1, w - 1, h - 1), outline=0)
+        draw.text((4, 4), "VULN SCANNER", font=font_title, fill=0)
+        draw.line((1, 22, w - 1, 22), fill=0)
+
+        y = 28
+        line_h = 14
+        sd = self.shared_data
+
+        vuln_count = getattr(sd, 'vulnnbr', 0)
+        attack_count = getattr(sd, 'attacksnbr', 0)
+
+        stats = [
+            ("Vulnerabilities", str(vuln_count)),
+            ("Attacks avail.", str(attack_count)),
+            ("Hosts scanned", str(getattr(sd, 'targetnbr', 0))),
+            ("Ports found", str(getattr(sd, 'portnbr', 0))),
+            ("Level", str(getattr(sd, 'levelnbr', 0))),
+            ("Coins", str(getattr(sd, 'coinnbr', 0))),
+            ("Status", str(getattr(sd, 'ragnarstatustext', 'IDLE'))),
+            ("Action", str(getattr(sd, 'ragnarstatustext2', ''))),
+        ]
+
+        for label, value in stats:
+            draw.text((6, y), label, font=font, fill=0)
+            draw.text((w - 6 - font.getlength(value), y), value, font=font, fill=0)
+            y += line_h
+
+        # Footer
+        draw.line((1, h - 18, w - 1, h - 18), fill=0)
+        draw.text((4, h - 16), "KEY1:Main KEY2:Network KEY4:Rst", font=font, fill=0)
+
     def run(self):
         """Main loop for updating the EPD display with shared data."""
         self.manual_mode_txt = ""
@@ -697,6 +784,36 @@ class Display:
                 image = Image.new('1', (self.shared_data.width, self.shared_data.height))
                 draw = ImageDraw.Draw(image)
                 draw.rectangle((0, 0, self.shared_data.width, self.shared_data.height), fill=255)
+
+                # Check if button listener wants a different page
+                current_page = PAGE_MAIN
+                if self.button_listener and self.button_listener.available:
+                    current_page = self.button_listener.current_page
+
+                if current_page == PAGE_NETWORK:
+                    self._render_network_page(image, draw)
+                elif current_page == PAGE_VULN:
+                    self._render_vuln_page(image, draw)
+                    # Skip the main rendering below
+                else:
+                    pass  # Fall through to main page rendering below
+
+                if current_page != PAGE_MAIN:
+                    # Non-main pages are fully rendered above, skip to display
+                    if self.screen_reversed:
+                        image = image.transpose(Image.Transpose.ROTATE_180)
+                    self.epd_helper.display_partial(image)
+                    self.epd_helper.display_partial(image)
+                    if self.web_screen_reversed:
+                        image = image.transpose(Image.Transpose.ROTATE_180)
+                    with open(os.path.join(self.shared_data.webdir, "screen.png"), 'wb') as img_file:
+                        image.save(img_file)
+                        img_file.flush()
+                        os.fsync(img_file.fileno())
+                    time.sleep(self.shared_data.screen_delay)
+                    continue
+
+                # === PAGE_MAIN: Default Ragnar display ===
                 # Check PiSugar once per frame for title sizing + battery text
                 _pisugar_available = False
                 try:
