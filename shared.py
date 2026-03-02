@@ -1216,12 +1216,23 @@ class SharedData:
         try:
             logger.info("Loading fonts...")
             sf = getattr(self, 'scale_factor_y', 1.0)
+            sx = getattr(self, 'scale_factor_x', 1.0)
+            is_wide = sx > 1.2  # Display is significantly wider than 2.13" (e.g. 2.7")
+
             self.font_arial14 = self.load_font('Arial.ttf', max(9, int(14 * sf)))
             self.font_arial11 = self.load_font('Arial.ttf', max(8, int(11 * sf)))
             self.font_arial9 = self.load_font('Arial.ttf', max(7, int(9 * sf)))
             self.font_arialbold = self.load_font('Arial.ttf', max(9, int(12 * sf)))
-            self.font_viking = self.load_font('Viking.TTF', max(10, int(13 * sf)))
-            self.font_viking_sm = self.load_font('Viking.TTF', max(8, int(10 * sf)))
+
+            # Viking title font: scale down 50% on wider displays so it doesn't dominate
+            if is_wide:
+                viking_size = max(7, int(13 * sf * 0.5))
+                viking_sm_size = max(6, int(10 * sf * 0.5))
+            else:
+                viking_size = max(10, int(13 * sf))
+                viking_sm_size = max(8, int(10 * sf))
+            self.font_viking = self.load_font('Viking.TTF', viking_size)
+            self.font_viking_sm = self.load_font('Viking.TTF', viking_sm_size)
 
         except Exception as e:
             logger.error(f"Error loading fonts: {e}")

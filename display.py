@@ -73,6 +73,11 @@ class Display:
         self.scale_factor_x = self.shared_data.scale_factor_x
         self.scale_factor_y = self.shared_data.scale_factor_y
 
+        # Layout stretch for wider displays (e.g. 2.7" 176x264)
+        # On 2.13" (122x250) this is 1.0 - no change
+        # On 2.7" (176x264) scale_factor_x=1.44, so y_stretch=1.3
+        self.y_stretch = 1.3 if self.scale_factor_x > 1.2 else 1.0
+
     def get_frise_position(self):
         """Get the frise position based on the display type."""
         display_type = self.config.get("epd_type", "default")
@@ -738,16 +743,18 @@ class Display:
                     except Exception:
                         pass
 
+                # y_stretch gives more vertical room to stats/status on wider displays
+                ys = self.y_stretch
                 stats = [
-                    (self.shared_data.target, (int(8 * self.scale_factor_x), int(22 * self.scale_factor_y)), (int(28 * self.scale_factor_x), int(22 * self.scale_factor_y)), str(self.shared_data.targetnbr)),
-                    (self.shared_data.port, (int(47 * self.scale_factor_x), int(22 * self.scale_factor_y)), (int(67 * self.scale_factor_x), int(22 * self.scale_factor_y)), str(self.shared_data.portnbr)),
-                    (self.shared_data.vuln, (int(86 * self.scale_factor_x), int(22 * self.scale_factor_y)), (int(106 * self.scale_factor_x), int(22 * self.scale_factor_y)), str(self.shared_data.vulnnbr)),
-                    (self.shared_data.cred, (int(8 * self.scale_factor_x), int(41 * self.scale_factor_y)), (int(28 * self.scale_factor_x), int(41 * self.scale_factor_y)), str(self.shared_data.crednbr)),
+                    (self.shared_data.target, (int(8 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(28 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.targetnbr)),
+                    (self.shared_data.port, (int(47 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(67 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.portnbr)),
+                    (self.shared_data.vuln, (int(86 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(106 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.vulnnbr)),
+                    (self.shared_data.cred, (int(8 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(28 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.crednbr)),
                     (self.shared_data.money, (int(3 * self.scale_factor_x), int(172 * self.scale_factor_y)), (int(3 * self.scale_factor_x), int(192 * self.scale_factor_y)), str(self.shared_data.coinnbr)),
                     (self.shared_data.level, (int(2 * self.scale_factor_x), int(217 * self.scale_factor_y)), (int(4 * self.scale_factor_x), int(237 * self.scale_factor_y)), str(self.shared_data.levelnbr)),
-                    (self.shared_data.zombie, (int(47 * self.scale_factor_x), int(41 * self.scale_factor_y)), (int(67 * self.scale_factor_x), int(41 * self.scale_factor_y)), str(self.shared_data.zombiesnbr)),
+                    (self.shared_data.zombie, (int(47 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(67 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.zombiesnbr)),
                     (self.shared_data.networkkb, (int(102 * self.scale_factor_x), int(190 * self.scale_factor_y)), (int(102 * self.scale_factor_x), int(208 * self.scale_factor_y)), str(self.shared_data.networkkbnbr)),
-                    (self.shared_data.data, (int(86 * self.scale_factor_x), int(41 * self.scale_factor_y)), (int(106 * self.scale_factor_x), int(41 * self.scale_factor_y)), str(self.shared_data.datanbr)),
+                    (self.shared_data.data, (int(86 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(106 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.datanbr)),
                     (self.shared_data.attacks, (int(100 * self.scale_factor_x), int(218 * self.scale_factor_y)), (int(102 * self.scale_factor_x), int(237 * self.scale_factor_y)), str(self.shared_data.attacksnbr)),
                 ]
 
@@ -756,9 +763,9 @@ class Display:
                     draw.text(text_pos, text, font=self.shared_data.font_arial9, fill=0)
 
                 self.shared_data.update_ragnarstatus()
-                image.paste(self.shared_data.ragnarstatusimage, (int(3 * self.scale_factor_x), int(60 * self.scale_factor_y)))
-                draw.text((int(35 * self.scale_factor_x), int(65 * self.scale_factor_y)), self.shared_data.ragnarstatustext, font=self.shared_data.font_arial9, fill=0)
-                draw.text((int(35 * self.scale_factor_x), int(75 * self.scale_factor_y)), self.shared_data.ragnarstatustext2, font=self.shared_data.font_arial9, fill=0)
+                image.paste(self.shared_data.ragnarstatusimage, (int(3 * self.scale_factor_x), int(60 * self.scale_factor_y * ys)))
+                draw.text((int(35 * self.scale_factor_x), int(65 * self.scale_factor_y * ys)), self.shared_data.ragnarstatustext, font=self.shared_data.font_arial9, fill=0)
+                draw.text((int(35 * self.scale_factor_x), int(75 * self.scale_factor_y * ys)), self.shared_data.ragnarstatustext2, font=self.shared_data.font_arial9, fill=0)
 
                 # Get frise position based on display type
                 frise_x, frise_y = self.get_frise_position()
@@ -766,11 +773,11 @@ class Display:
 
                 draw.rectangle((1, 1, self.shared_data.width - 1, self.shared_data.height - 1), outline=0)
                 draw.line((1, int(20 * self.scale_factor_y), self.shared_data.width - 1, int(20 * self.scale_factor_y)), fill=0)
-                draw.line((1, int(59 * self.scale_factor_y), self.shared_data.width - 1, int(59 * self.scale_factor_y)), fill=0)
-                draw.line((1, int(87 * self.scale_factor_y), self.shared_data.width - 1, int(87 * self.scale_factor_y)), fill=0)
+                draw.line((1, int(59 * self.scale_factor_y * ys), self.shared_data.width - 1, int(59 * self.scale_factor_y * ys)), fill=0)
+                draw.line((1, int(87 * self.scale_factor_y * ys), self.shared_data.width - 1, int(87 * self.scale_factor_y * ys)), fill=0)
 
                 lines = self.shared_data.wrap_text(self.shared_data.ragnarsays, self.shared_data.font_arialbold, self.shared_data.width - 4)
-                y_text = int(90 * self.scale_factor_y)
+                y_text = int(90 * self.scale_factor_y * ys)
 
                 if self.main_image is not None:
                     image.paste(self.main_image, (self.shared_data.x_center1, self.shared_data.y_bottom1))
