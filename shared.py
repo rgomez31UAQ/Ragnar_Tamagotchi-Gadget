@@ -1224,10 +1224,10 @@ class SharedData:
             self.font_arial9 = self.load_font('Arial.ttf', max(7, int(9 * sf)))
             self.font_arialbold = self.load_font('Arial.ttf', max(9, int(12 * sf)))
 
-            # Viking title font: scale down 25% on wider displays to fit proportionally
+            # Viking title font: keep same size on wider displays (no reduction needed)
             if is_wide:
-                viking_size = max(9, int(13 * sf * 0.75))
-                viking_sm_size = max(7, int(10 * sf * 0.75))
+                viking_size = max(10, int(13 * sf))
+                viking_sm_size = max(8, int(10 * sf))
             else:
                 viking_size = max(10, int(13 * sf))
                 viking_sm_size = max(8, int(10 * sf))

@@ -743,19 +743,22 @@ class Display:
                     except Exception:
                         pass
 
-                # y_stretch gives more vertical room to stats/status on wider displays
+                # ys stretches the status/comment section down on wider displays
+                # Stats rows stay at normal scale, only dividers and status below get stretched
                 ys = self.y_stretch
+                sx = self.scale_factor_x
+                sy = self.scale_factor_y
                 stats = [
-                    (self.shared_data.target, (int(8 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(28 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.targetnbr)),
-                    (self.shared_data.port, (int(47 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(67 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.portnbr)),
-                    (self.shared_data.vuln, (int(86 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), (int(106 * self.scale_factor_x), int(22 * self.scale_factor_y * ys)), str(self.shared_data.vulnnbr)),
-                    (self.shared_data.cred, (int(8 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(28 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.crednbr)),
-                    (self.shared_data.money, (int(3 * self.scale_factor_x), int(172 * self.scale_factor_y)), (int(3 * self.scale_factor_x), int(192 * self.scale_factor_y)), str(self.shared_data.coinnbr)),
-                    (self.shared_data.level, (int(2 * self.scale_factor_x), int(217 * self.scale_factor_y)), (int(4 * self.scale_factor_x), int(237 * self.scale_factor_y)), str(self.shared_data.levelnbr)),
-                    (self.shared_data.zombie, (int(47 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(67 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.zombiesnbr)),
-                    (self.shared_data.networkkb, (int(102 * self.scale_factor_x), int(190 * self.scale_factor_y)), (int(102 * self.scale_factor_x), int(208 * self.scale_factor_y)), str(self.shared_data.networkkbnbr)),
-                    (self.shared_data.data, (int(86 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), (int(106 * self.scale_factor_x), int(41 * self.scale_factor_y * ys)), str(self.shared_data.datanbr)),
-                    (self.shared_data.attacks, (int(100 * self.scale_factor_x), int(218 * self.scale_factor_y)), (int(102 * self.scale_factor_x), int(237 * self.scale_factor_y)), str(self.shared_data.attacksnbr)),
+                    (self.shared_data.target, (int(8 * sx), int(22 * sy)), (int(28 * sx), int(22 * sy)), str(self.shared_data.targetnbr)),
+                    (self.shared_data.port, (int(47 * sx), int(22 * sy)), (int(67 * sx), int(22 * sy)), str(self.shared_data.portnbr)),
+                    (self.shared_data.vuln, (int(86 * sx), int(22 * sy)), (int(106 * sx), int(22 * sy)), str(self.shared_data.vulnnbr)),
+                    (self.shared_data.cred, (int(8 * sx), int(41 * sy)), (int(28 * sx), int(41 * sy)), str(self.shared_data.crednbr)),
+                    (self.shared_data.money, (int(3 * sx), int(172 * sy)), (int(3 * sx), int(192 * sy)), str(self.shared_data.coinnbr)),
+                    (self.shared_data.level, (int(2 * sx), int(217 * sy)), (int(4 * sx), int(237 * sy)), str(self.shared_data.levelnbr)),
+                    (self.shared_data.zombie, (int(47 * sx), int(41 * sy)), (int(67 * sx), int(41 * sy)), str(self.shared_data.zombiesnbr)),
+                    (self.shared_data.networkkb, (int(102 * sx), int(190 * sy)), (int(102 * sx), int(208 * sy)), str(self.shared_data.networkkbnbr)),
+                    (self.shared_data.data, (int(86 * sx), int(41 * sy)), (int(106 * sx), int(41 * sy)), str(self.shared_data.datanbr)),
+                    (self.shared_data.attacks, (int(100 * sx), int(218 * sy)), (int(102 * sx), int(237 * sy)), str(self.shared_data.attacksnbr)),
                 ]
 
                 for img, img_pos, text_pos, text in stats:
@@ -763,21 +766,22 @@ class Display:
                     draw.text(text_pos, text, font=self.shared_data.font_arial9, fill=0)
 
                 self.shared_data.update_ragnarstatus()
-                image.paste(self.shared_data.ragnarstatusimage, (int(3 * self.scale_factor_x), int(60 * self.scale_factor_y * ys)))
-                draw.text((int(35 * self.scale_factor_x), int(65 * self.scale_factor_y * ys)), self.shared_data.ragnarstatustext, font=self.shared_data.font_arial9, fill=0)
-                draw.text((int(35 * self.scale_factor_x), int(75 * self.scale_factor_y * ys)), self.shared_data.ragnarstatustext2, font=self.shared_data.font_arial9, fill=0)
+                image.paste(self.shared_data.ragnarstatusimage, (int(3 * sx), int(60 * sy * ys)))
+                draw.text((int(35 * sx), int(65 * sy * ys)), self.shared_data.ragnarstatustext, font=self.shared_data.font_arial9, fill=0)
+                draw.text((int(35 * sx), int(75 * sy * ys)), self.shared_data.ragnarstatustext2, font=self.shared_data.font_arial9, fill=0)
 
-                # Get frise position based on display type
-                frise_x, frise_y = self.get_frise_position()
-                image.paste(self.shared_data.frise, (frise_x, frise_y))
+                # Frise ribbon - hide on wide displays to save vertical space
+                if ys == 1.0:
+                    frise_x, frise_y = self.get_frise_position()
+                    image.paste(self.shared_data.frise, (frise_x, frise_y))
 
                 draw.rectangle((1, 1, self.shared_data.width - 1, self.shared_data.height - 1), outline=0)
-                draw.line((1, int(20 * self.scale_factor_y), self.shared_data.width - 1, int(20 * self.scale_factor_y)), fill=0)
-                draw.line((1, int(59 * self.scale_factor_y * ys), self.shared_data.width - 1, int(59 * self.scale_factor_y * ys)), fill=0)
-                draw.line((1, int(87 * self.scale_factor_y * ys), self.shared_data.width - 1, int(87 * self.scale_factor_y * ys)), fill=0)
+                draw.line((1, int(20 * sy), self.shared_data.width - 1, int(20 * sy)), fill=0)
+                draw.line((1, int(59 * sy * ys), self.shared_data.width - 1, int(59 * sy * ys)), fill=0)
+                draw.line((1, int(87 * sy * ys), self.shared_data.width - 1, int(87 * sy * ys)), fill=0)
 
                 lines = self.shared_data.wrap_text(self.shared_data.ragnarsays, self.shared_data.font_arialbold, self.shared_data.width - 4)
-                y_text = int(90 * self.scale_factor_y * ys)
+                y_text = int(90 * sy * ys)
 
                 if self.main_image is not None:
                     image.paste(self.main_image, (self.shared_data.x_center1, self.shared_data.y_bottom1))
