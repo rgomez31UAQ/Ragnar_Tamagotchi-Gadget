@@ -75,8 +75,8 @@ class Display:
 
         # Layout stretch for wider displays (e.g. 2.7" 176x264)
         # On 2.13" (122x250) this is 1.0 - no change
-        # On 2.7" (176x264) scale_factor_x=1.44, so y_stretch=1.3
-        self.y_stretch = 1.3 if self.scale_factor_x > 1.2 else 1.0
+        # On 2.7" (176x264) scale_factor_x=1.44, so y_stretch=1.15
+        self.y_stretch = 1.15 if self.scale_factor_x > 1.2 else 1.0
 
     def get_frise_position(self):
         """Get the frise position based on the display type."""
