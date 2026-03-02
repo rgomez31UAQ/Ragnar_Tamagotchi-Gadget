@@ -697,6 +697,18 @@ class Display:
             logger.error(f"Error checking USB connection status: {e}")
             return False
 
+    def _sleep_interruptible(self, current_page):
+        """Sleep for screen_delay but wake early if button changes the page."""
+        if not self.button_listener:
+            time.sleep(self.shared_data.screen_delay)
+            return
+        # Check every 0.1s if page changed, otherwise do full sleep
+        steps = max(1, int(self.shared_data.screen_delay / 0.1))
+        for _ in range(steps):
+            if self.button_listener.current_page != current_page:
+                return  # Page changed, skip remaining sleep
+            time.sleep(0.1)
+
     def _render_network_page(self, image, draw):
         """Render Page 2: Network Scanner stats."""
         w = self.shared_data.width
@@ -803,17 +815,14 @@ class Display:
                     if self.screen_reversed:
                         image = image.transpose(Image.Transpose.ROTATE_180)
                     self.epd_helper.display_partial(image)
+                    self.epd_helper.display_partial(image)
                     if self.web_screen_reversed:
                         image = image.transpose(Image.Transpose.ROTATE_180)
                     with open(os.path.join(self.shared_data.webdir, "screen.png"), 'wb') as img_file:
                         image.save(img_file)
                         img_file.flush()
                         os.fsync(img_file.fileno())
-                    # Break-early sleep: check for page change every 0.2s
-                    for _ in range(int(self.shared_data.screen_delay / 0.2)):
-                        if self.button_listener and self.button_listener.current_page != current_page:
-                            break
-                        time.sleep(0.2)
+                    self._sleep_interruptible(current_page)
                     continue
 
                 # === PAGE_MAIN: Default Ragnar display ===
@@ -916,6 +925,7 @@ class Display:
                     image = image.transpose(Image.Transpose.ROTATE_180)
 
                 self.epd_helper.display_partial(image)
+                self.epd_helper.display_partial(image)
 
                 if self.web_screen_reversed:
                     image = image.transpose(Image.Transpose.ROTATE_180)
@@ -924,11 +934,7 @@ class Display:
                     img_file.flush()
                     os.fsync(img_file.fileno())
 
-                # Break-early sleep: check for page change every 0.2s
-                for _ in range(int(self.shared_data.screen_delay / 0.2)):
-                    if self.button_listener and self.button_listener.current_page != PAGE_MAIN:
-                        break
-                    time.sleep(0.2)
+                self._sleep_interruptible(PAGE_MAIN)
             except Exception as e:
                 logger.error(f"An error occurred: {e}")
 
