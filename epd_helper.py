@@ -11,6 +11,7 @@ KNOWN_EPD_TYPES = [
     "epd2in13_V4",
     "epd2in13_V3",
     "epd2in13_V2",
+    "epd2in7_V2",
     "epd2in7",
     "epd2in13",
     "epd2in9_V2",
@@ -62,15 +63,31 @@ class EPDHelper:
 
     def display_partial(self, image):
         try:
+            imw, imh = image.size
+            epd_w, epd_h = self.epd.width, self.epd.height
+
+            # Ensure image matches EPD dimensions before sending to driver
+            if imw != epd_w or imh != epd_h:
+                logger.warning(f"Image size {imw}x{imh} != EPD size {epd_w}x{epd_h}, resizing")
+                image = image.resize((epd_w, epd_h))
+
+            buf = self.epd.getbuffer(image)
+
             if hasattr(self.epd, 'displayPartial'):
-                self.epd.displayPartial(self.epd.getbuffer(image))
+                self.epd.displayPartial(buf)
             elif hasattr(self.epd, 'display_Partial'):
-                self.epd.display_Partial(self.epd.getbuffer(image))
+                import inspect
+                sig = inspect.signature(self.epd.display_Partial)
+                if len(sig.parameters) >= 5:
+                    # V2-style: display_Partial(image, Xstart, Ystart, Xend, Yend)
+                    self.epd.display_Partial(buf, 0, 0, epd_w, epd_h)
+                else:
+                    self.epd.display_Partial(buf)
             else:
-                self.epd.display(self.epd.getbuffer(image))
+                self.epd.display(buf)
             logger.info("Partial display update complete.")
         except Exception as e:
-            logger.error(f"Error during partial display update: {e}")
+            logger.error(f"Error during partial display update: {e} (image={image.size if hasattr(image,'size') else '?'}, epd={self.epd.width}x{self.epd.height}, buf_len={len(buf) if 'buf' in dir() else '?'})")
             raise
 
     def clear(self):

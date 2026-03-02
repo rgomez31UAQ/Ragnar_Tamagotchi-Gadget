@@ -59,7 +59,7 @@ DESIGN_REF_HEIGHT = 250  # All layout coordinates are designed for this height
 # Map web UI size keys to default driver names
 SIZE_KEY_TO_DEFAULT_DRIVER = {
     "2in13": "epd2in13_V4",
-    "2in7":  "epd2in7",
+    "2in7":  "epd2in7_V2",
     "2in9":  "epd2in9_V2",
     "3in7":  "epd3in7",
 }
@@ -86,6 +86,7 @@ def resolve_epd_type(size_key, current_epd_type=None):
 DISPLAY_PROFILES = {
     "epd2in13":    {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
     "epd2in7":     {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
+    "epd2in7_V2":  {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
     "epd2in9_V2":  {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
     "epd3in7":     {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
     "epd2in13_V2": {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
@@ -755,9 +756,18 @@ class SharedData:
             time.sleep(1)
             epd_type = self.config.get("epd_type", DEFAULT_EPD_TYPE)
 
-            # Auto-detect mode: probe hardware to find the connected display
-            if epd_type == "auto":
-                logger.info("EPD auto-detection requested...")
+            # Auto-detect if set to "auto" OR if still on factory default (user never ran installer with detection)
+            needs_detect = epd_type == "auto"
+            if not needs_detect:
+                # Also auto-detect if the configured driver doesn't exist or can't load
+                try:
+                    EPDHelper(epd_type)
+                except Exception:
+                    logger.warning(f"Configured EPD driver '{epd_type}' failed to load, switching to auto-detect")
+                    needs_detect = True
+
+            if needs_detect:
+                logger.info("EPD auto-detection running...")
                 result = EPDHelper.auto_detect()
                 if result:
                     epd_type = result[0]
@@ -772,9 +782,21 @@ class SharedData:
             self.apply_display_profile(epd_type)
             self.screen_reversed = bool(self.config.get("screen_reversed", False))
             self.web_screen_reversed = self.screen_reversed
-            logger.info(f"EPD type: {epd_type} | flipped: {self.screen_reversed}")
+            logger.info(f"EPD type: {epd_type} | size: {self.epd_helper.epd.width}x{self.epd_helper.epd.height} | flipped: {self.screen_reversed}")
             self.epd_helper.init_full_update()
             self.width, self.height = self.epd_helper.epd.width, self.epd_helper.epd.height
+
+            # Validate the driver works by doing a test getbuffer with a blank image
+            try:
+                test_img = Image.new('1', (self.width, self.height), 255)
+                test_buf = self.epd_helper.epd.getbuffer(test_img)
+                expected_size = int(self.width / 8) * self.height
+                if len(test_buf) < expected_size:
+                    raise ValueError(f"Buffer size mismatch: got {len(test_buf)}, expected {expected_size}")
+            except Exception as ve:
+                logger.warning(f"EPD driver '{epd_type}' buffer validation failed: {ve}, trying auto-detect...")
+                raise  # Fall through to the auto-detect fallback below
+
             logger.info(f"EPD {self.config['epd_type']} initialized with size: {self.width}x{self.height}")
         except Exception as e:
             logger.error(f"Error initializing EPD display: {e}")
