@@ -1649,10 +1649,11 @@ except:
     fi
     
     # Check available RAM (7.5GB threshold for 8GB systems with overhead)
-    TOTAL_RAM_MB=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
-    TOTAL_RAM_GB=$(echo "scale=2; $TOTAL_RAM_MB / 1024" | bc 2>/dev/null || echo "0")
+    # Use LC_ALL=C so free always prints "Mem:" regardless of system locale
+    TOTAL_RAM_MB=$(LC_ALL=C free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+    TOTAL_RAM_GB=$(awk "BEGIN{printf \"%.2f\", ${TOTAL_RAM_MB:-0}/1024}")
     MIN_RAM_GB=7.5
-    HAS_ENOUGH_RAM=$(echo "$TOTAL_RAM_GB >= $MIN_RAM_GB" | bc 2>/dev/null || echo "0")
+    HAS_ENOUGH_RAM=$(awk "BEGIN{print (${TOTAL_RAM_GB:-0} >= $MIN_RAM_GB) ? 1 : 0}")
     
     log "INFO" "System RAM: ${TOTAL_RAM_GB}GB (minimum for advanced tools: ${MIN_RAM_GB}GB)"
     

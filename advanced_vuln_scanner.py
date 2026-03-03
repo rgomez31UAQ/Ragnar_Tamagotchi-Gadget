@@ -475,9 +475,8 @@ class AdvancedVulnScanner:
         # Recover any interrupted scans on startup
         self._recover_interrupted_scans()
 
-        # Auto-start ZAP daemon and launch watchdog to keep it alive
+        # Watchdog thread: auto-starts ZAP and keeps it alive
         if self._tool_paths.get('zap'):
-            threading.Thread(target=self._auto_start_zap, daemon=True).start()
             threading.Thread(target=self._zap_watchdog, daemon=True).start()
 
     def _init_database(self):
@@ -536,62 +535,21 @@ class AdvancedVulnScanner:
         except Exception as e:
             logger.error(f"Error recovering interrupted scans: {e}")
 
-    def _auto_start_zap(self):
-        """Auto-start ZAP daemon in background with retries.
-
-        ZAP is a heavy Java app that must always be running in server mode.
-        On ARM (Raspberry Pi) it can take 2-3 minutes to start.  If the
-        first attempt fails we retry with increasing backoff so the daemon
-        eventually comes up without blocking the main thread.
-        """
-        max_retries = 3
-        retry_delays = [10, 30, 60]  # seconds between retries
-
-        for attempt in range(max_retries + 1):
-            try:
-                if self._is_zap_running():
-                    logger.info("ZAP daemon already running")
-                    return
-
-                label = f"(attempt {attempt + 1}/{max_retries + 1})" if attempt > 0 else ""
-                logger.info(f"Auto-starting ZAP daemon... {label}")
-
-                if self.start_zap_daemon():
-                    logger.info("ZAP daemon auto-started successfully")
-                    return
-                else:
-                    logger.warning(f"ZAP daemon auto-start failed {label}")
-            except Exception as e:
-                logger.warning(f"ZAP auto-start error {label}: {e}")
-
-            if attempt < max_retries:
-                delay = retry_delays[min(attempt, len(retry_delays) - 1)]
-                logger.info(f"Retrying ZAP auto-start in {delay}s...")
-                time.sleep(delay)
-
-        logger.error("ZAP daemon failed to auto-start after all retries. "
-                     "Watchdog will keep trying in the background.")
-
     def _zap_watchdog(self):
-        """Background watchdog that keeps the ZAP daemon alive.
+        """Background watchdog that starts the ZAP daemon and keeps it alive.
 
-        Polls every 30 seconds.  When ZAP is found to be down (and the user
-        hasn't explicitly stopped it), the watchdog attempts a restart with
-        back-off: 30 s → 60 s → 120 s.  After a successful restart the
-        interval resets.
+        Runs immediately on startup, then polls every 30 seconds.  When ZAP
+        is found to be down (and the user hasn't explicitly stopped it), the
+        watchdog attempts a restart with back-off: 30 s → 60 s → 120 s.
+        After a successful restart the interval resets.
         """
         POLL_INTERVAL = 30          # seconds between health checks
         BACKOFF_DELAYS = [30, 60, 120]  # restart back-off schedule
         consecutive_failures = 0
 
-        # Wait for the initial auto-start attempt to finish
-        self._zap_watchdog_stop.wait(timeout=POLL_INTERVAL)
-
         while not self._zap_watchdog_stop.is_set():
             try:
                 if self._zap_user_stopped:
-                    # User explicitly stopped ZAP — stay idle until they
-                    # start it again (which clears the flag).
                     self._zap_watchdog_stop.wait(timeout=POLL_INTERVAL)
                     continue
 
