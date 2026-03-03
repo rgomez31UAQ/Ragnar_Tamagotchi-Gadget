@@ -11548,13 +11548,19 @@ def get_traffic_host_details(ip):
 # ADVANCED VULNERABILITY SCANNING API ENDPOINTS
 # ============================================================================
 
-# Global advanced vuln scanner instance
+# Global advanced vuln scanner instance (thread-safe singleton)
 _advanced_vuln_scanner_instance = None
+_advanced_vuln_scanner_lock = threading.Lock()
 
 def get_advanced_vuln_scanner():
-    """Get or create advanced vuln scanner instance"""
+    """Get or create advanced vuln scanner instance (thread-safe)"""
     global _advanced_vuln_scanner_instance
-    if _advanced_vuln_scanner_instance is None:
+    if _advanced_vuln_scanner_instance is not None:
+        return _advanced_vuln_scanner_instance
+    with _advanced_vuln_scanner_lock:
+        # Double-check after acquiring lock
+        if _advanced_vuln_scanner_instance is not None:
+            return _advanced_vuln_scanner_instance
         try:
             from advanced_vuln_scanner import AdvancedVulnScanner
             _advanced_vuln_scanner_instance = AdvancedVulnScanner(shared_data)
