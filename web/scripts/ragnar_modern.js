@@ -966,7 +966,14 @@ async function loadDashboardData() {
         if (data) {
             // Update status block immediately
             updateDashboardStatus(data);
-            await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            // Only fetch network-specific stats if a specific network is selected;
+            // otherwise /api/dashboard/quick already has the correct data (instant).
+            const { network } = getSelectedDashboardNetworkKey();
+            if (network) {
+                await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            } else {
+                updateDashboardStats(data);
+            }
         }
         
         // Load AI insights if configured
