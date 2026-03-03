@@ -1649,8 +1649,8 @@ except:
     fi
     
     # Check available RAM (7.5GB threshold for 8GB systems with overhead)
-    # Use LC_ALL=C so free always prints "Mem:" regardless of system locale
-    TOTAL_RAM_MB=$(LC_ALL=C free -m 2>/dev/null | awk '/^Mem:/{print $2}')
+    # NR==2 grabs the memory row regardless of locale (avoids Mem:/Minne:/etc.)
+    TOTAL_RAM_MB=$(free -m 2>/dev/null | awk 'NR==2{print $2}')
     TOTAL_RAM_GB=$(awk "BEGIN{printf \"%.2f\", ${TOTAL_RAM_MB:-0}/1024}")
     MIN_RAM_GB=7.5
     HAS_ENOUGH_RAM=$(awk "BEGIN{print (${TOTAL_RAM_GB:-0} >= $MIN_RAM_GB) ? 1 : 0}")
