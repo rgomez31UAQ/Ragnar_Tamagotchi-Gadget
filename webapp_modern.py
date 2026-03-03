@@ -4318,7 +4318,8 @@ def attack_logs():
                 'target_port': target_port,
                 'status': status,
                 'message': message,
-                'details': details
+                'details': details,
+                'network_ssid': getattr(shared_data, 'active_network_ssid', None) or 'unknown'
             }
             
             # Load existing logs or create new list
@@ -4360,6 +4361,7 @@ def attack_logs():
             ip_filter = request.args.get('ip', None)
             attack_type_filter = request.args.get('type', None)
             status_filter = request.args.get('status', None)
+            network_filter = request.args.get('network', None)
             limit = int(request.args.get('limit', 100))
             days_back = int(request.args.get('days', 7))
             
@@ -4405,18 +4407,27 @@ def attack_logs():
                     logger.error(f"Error reading attack log file {log_file}: {e}")
                     continue
 
+            # Collect all unique network SSIDs across all logs (before filtering)
+            available_networks = sorted(set(
+                log.get('network_ssid') or 'unknown'
+                for log in all_logs
+            ))
+
             # Apply filters
             filtered_logs = all_logs
 
             if ip_filter:
                 filtered_logs = [log for log in filtered_logs if log.get('target_ip') == ip_filter]
-            
+
             if attack_type_filter:
                 filtered_logs = [log for log in filtered_logs if log.get('attack_type') == attack_type_filter]
-            
+
             if status_filter:
                 filtered_logs = [log for log in filtered_logs if log.get('status') == status_filter]
-            
+
+            if network_filter:
+                filtered_logs = [log for log in filtered_logs if (log.get('network_ssid') or 'unknown') == network_filter]
+
             # Sort by timestamp (most recent first)
             filtered_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
 
@@ -4441,10 +4452,12 @@ def attack_logs():
                 'filtered_count': filtered_count,
                 'success_count': success_count,
                 'failed_count': failed_count,
+                'available_networks': available_networks,
                 'filters_applied': {
                     'ip': ip_filter,
                     'type': attack_type_filter,
                     'status': status_filter,
+                    'network': network_filter,
                     'days': days_back,
                     'limit': limit
                 }

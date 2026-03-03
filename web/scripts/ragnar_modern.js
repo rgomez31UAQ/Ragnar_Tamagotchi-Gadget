@@ -2518,6 +2518,9 @@ async function loadLootData() {
 
 // Attack Logs Functions
 let currentAttackFilter = 'all';
+let currentAttackGroupBy = 'ip';
+let currentAttackNetworkFilter = 'all';
+let currentAttackIPSearch = '';
 let attackLogsCache = null;
 let attackLogsETag = null;
 let attackLogsInFlight = null;
@@ -2609,6 +2612,116 @@ async function refreshAttackLogs() {
     await loadAttackLogs({ force: true });
 }
 
+function setAttackGroupBy(groupBy) {
+    currentAttackGroupBy = groupBy;
+    document.querySelectorAll('.attack-groupby-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-groupby') === groupBy;
+        btn.classList.toggle('bg-Ragnar-600', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+        btn.classList.toggle('hover:text-white', !isActive);
+    });
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function filterAttackByNetwork(network) {
+    currentAttackNetworkFilter = network;
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function onAttackIPSearch(value) {
+    currentAttackIPSearch = value.trim().toLowerCase();
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function _updateAttackNetworkDropdown(networks) {
+    const select = document.getElementById('attack-network-filter');
+    if (!select) return;
+    const current = select.value;
+    // Rebuild options preserving selection
+    select.innerHTML = '<option value="all">All Networks</option>';
+    (networks || []).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = n === 'unknown' ? 'Unknown Network' : n;
+        if (n === current) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function _buildAttackHostBlock(ip, hostLogs) {
+    const successCount = hostLogs.filter(l => l.status === 'success').length;
+    const failedCount  = hostLogs.filter(l => l.status === 'failed').length;
+    const timeoutCount = hostLogs.filter(l => l.status === 'timeout').length;
+    const safeId = ip.replace(/[^a-zA-Z0-9]/g, '-');
+
+    let html = `
+        <div class="bg-slate-800 bg-opacity-50 rounded-lg border border-slate-700 overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 bg-opacity-50 flex items-center justify-between cursor-pointer hover:bg-opacity-70 transition-colors" onclick="toggleAttackHost('${safeId}')">
+                <div class="flex items-center space-x-3">
+                    <svg class="w-5 h-5 text-Ragnar-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                    </svg>
+                    <span class="font-semibold text-lg">${ip}</span>
+                    <span class="text-sm text-gray-400">(${hostLogs.length} attacks)</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-green-400">✓ ${successCount}</span>
+                    <span class="text-sm text-red-400">✗ ${failedCount}</span>
+                    <span class="text-sm text-yellow-400">⏱ ${timeoutCount}</span>
+                    <svg id="attack-chevron-${safeId}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+            </div>
+            <div id="attack-host-${safeId}" class="hidden px-4 py-3 space-y-2">
+    `;
+
+    hostLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    hostLogs.forEach(log => {
+        const statusColors = {
+            'success': 'bg-green-900 bg-opacity-30 border-green-500',
+            'failed':  'bg-red-900 bg-opacity-30 border-red-500',
+            'timeout': 'bg-yellow-900 bg-opacity-30 border-yellow-500'
+        };
+        const statusIcons      = { 'success': '✓', 'failed': '✗', 'timeout': '⏱' };
+        const statusTextColors = { 'success': 'text-green-400', 'failed': 'text-red-400', 'timeout': 'text-yellow-400' };
+
+        const colorClass = statusColors[log.status]     || 'bg-gray-900 bg-opacity-30 border-gray-500';
+        const icon       = statusIcons[log.status]      || '•';
+        const textColor  = statusTextColors[log.status] || 'text-gray-400';
+
+        html += `
+            <div class="border-l-4 ${colorClass} p-3 rounded-r-lg">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-2 mb-1">
+                            <span class="font-semibold ${textColor}">${icon} ${log.attack_type}</span>
+                            ${log.target_port ? `<span class="text-xs text-gray-400">Port ${log.target_port}</span>` : ''}
+                            <span class="text-xs text-gray-500">${log.timestamp}</span>
+                        </div>
+                        ${log.message ? `<p class="text-sm text-gray-300 mb-2">${escapeHtml(log.message)}</p>` : ''}
+                        ${Object.keys(log.details || {}).length > 0 ? `
+                            <div class="text-xs space-y-1 mt-2">
+                                ${Object.entries(log.details).map(([key, value]) => `
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-gray-500">${key}:</span>
+                                        <span class="text-gray-300 font-mono">${escapeHtml(String(value))}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div></div>`;
+    return html;
+}
+
 function displayAttackLogs(data) {
     if (!data || !data.attack_logs) {
         document.getElementById('attack-logs-container').innerHTML = `
@@ -2621,149 +2734,117 @@ function displayAttackLogs(data) {
         `;
         return;
     }
-    
+
     // Update statistics
     document.getElementById('attack-stat-total').textContent = data.total_count || 0;
     document.getElementById('attack-stat-success').textContent = data.success_count || 0;
     document.getElementById('attack-stat-failed').textContent = data.failed_count || 0;
-    
-    // Calculate timeout count
     const timeoutCount = data.attack_logs.filter(log => log.status === 'timeout').length;
     document.getElementById('attack-stat-timeout').textContent = timeoutCount;
-    
-    // Filter logs based on current filter
+
+    // Populate network dropdown from available_networks returned by the API
+    _updateAttackNetworkDropdown(data.available_networks || []);
+
+    // Apply status filter
     let logs = data.attack_logs;
     if (currentAttackFilter !== 'all') {
         logs = logs.filter(log => log.status === currentAttackFilter);
     }
-    
+
+    // Apply network filter
+    if (currentAttackNetworkFilter !== 'all') {
+        logs = logs.filter(log => (log.network_ssid || 'unknown') === currentAttackNetworkFilter);
+    }
+
+    // Apply IP search filter
+    if (currentAttackIPSearch) {
+        logs = logs.filter(log => (log.target_ip || '').toLowerCase().includes(currentAttackIPSearch));
+    }
+
     if (logs.length === 0) {
         document.getElementById('attack-logs-container').innerHTML = `
             <div class="text-center text-gray-400 py-8">
                 <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                 </svg>
-                <p>No ${currentAttackFilter === 'all' ? '' : currentAttackFilter} attacks found</p>
+                <p>No attacks match the current filters</p>
             </div>
         `;
         return;
     }
-    
-    // Group logs by IP address
-    const logsByIP = {};
-    logs.forEach(log => {
-        const ip = log.target_ip || 'Unknown';
-        if (!logsByIP[ip]) {
-            logsByIP[ip] = [];
-        }
-        logsByIP[ip].push(log);
-    });
-    
-    // Sort IPs
-    const sortedIPs = Object.keys(logsByIP).sort();
-    
-    // Build HTML
+
     let html = '<div class="space-y-4">';
-    
-    sortedIPs.forEach(ip => {
-        const hostLogs = logsByIP[ip];
-        const successCount = hostLogs.filter(l => l.status === 'success').length;
-        const failedCount = hostLogs.filter(l => l.status === 'failed').length;
-        const timeoutCount = hostLogs.filter(l => l.status === 'timeout').length;
-        
-        html += `
-            <div class="bg-slate-800 bg-opacity-50 rounded-lg border border-slate-700 overflow-hidden">
-                <div class="px-4 py-3 bg-slate-900 bg-opacity-50 flex items-center justify-between cursor-pointer hover:bg-opacity-70 transition-colors" onclick="toggleAttackHost('${ip}')">
-                    <div class="flex items-center space-x-3">
-                        <svg class="w-5 h-5 text-Ragnar-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                        </svg>
-                        <span class="font-semibold text-lg">${ip}</span>
-                        <span class="text-sm text-gray-400">(${hostLogs.length} attacks)</span>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <span class="text-sm text-green-400">✓ ${successCount}</span>
-                        <span class="text-sm text-red-400">✗ ${failedCount}</span>
-                        <span class="text-sm text-yellow-400">⏱ ${timeoutCount}</span>
-                        <svg id="attack-chevron-${ip.replace(/\./g, '-')}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </div>
-                </div>
-                <div id="attack-host-${ip.replace(/\./g, '-')}" class="hidden px-4 py-3 space-y-2">
-        `;
-        
-        // Sort logs by timestamp (most recent first)
-        hostLogs.sort((a, b) => {
-            return new Date(b.timestamp) - new Date(a.timestamp);
+
+    if (currentAttackGroupBy === 'network') {
+        // --- Group by Network (SSID), then sub-group by IP ---
+        const logsByNetwork = {};
+        logs.forEach(log => {
+            const net = log.network_ssid || 'unknown';
+            if (!logsByNetwork[net]) logsByNetwork[net] = {};
+            const ip = log.target_ip || 'Unknown';
+            if (!logsByNetwork[net][ip]) logsByNetwork[net][ip] = [];
+            logsByNetwork[net][ip].push(log);
         });
-        
-        hostLogs.forEach(log => {
-            const statusColors = {
-                'success': 'bg-green-900 bg-opacity-30 border-green-500',
-                'failed': 'bg-red-900 bg-opacity-30 border-red-500',
-                'timeout': 'bg-yellow-900 bg-opacity-30 border-yellow-500'
-            };
-            
-            const statusIcons = {
-                'success': '✓',
-                'failed': '✗',
-                'timeout': '⏱'
-            };
-            
-            const statusTextColors = {
-                'success': 'text-green-400',
-                'failed': 'text-red-400',
-                'timeout': 'text-yellow-400'
-            };
-            
-            const colorClass = statusColors[log.status] || 'bg-gray-900 bg-opacity-30 border-gray-500';
-            const icon = statusIcons[log.status] || '•';
-            const textColor = statusTextColors[log.status] || 'text-gray-400';
-            
+
+        Object.keys(logsByNetwork).sort().forEach(net => {
+            const netId = net.replace(/[^a-zA-Z0-9]/g, '-');
+            const netLogs = Object.values(logsByNetwork[net]).flat();
+            const netSuccess = netLogs.filter(l => l.status === 'success').length;
+            const netFailed  = netLogs.filter(l => l.status === 'failed').length;
+            const netTimeout = netLogs.filter(l => l.status === 'timeout').length;
+            const ipCount = Object.keys(logsByNetwork[net]).length;
+
             html += `
-                <div class="border-l-4 ${colorClass} p-3 rounded-r-lg">
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <div class="flex items-center space-x-2 mb-1">
-                                <span class="font-semibold ${textColor}">${icon} ${log.attack_type}</span>
-                                ${log.target_port ? `<span class="text-xs text-gray-400">Port ${log.target_port}</span>` : ''}
-                                <span class="text-xs text-gray-500">${log.timestamp}</span>
-                            </div>
-                            ${log.message ? `<p class="text-sm text-gray-300 mb-2">${escapeHtml(log.message)}</p>` : ''}
-                            ${Object.keys(log.details || {}).length > 0 ? `
-                                <div class="text-xs space-y-1 mt-2">
-                                    ${Object.entries(log.details).map(([key, value]) => `
-                                        <div class="flex items-center space-x-2">
-                                            <span class="text-gray-500">${key}:</span>
-                                            <span class="text-gray-300 font-mono">${escapeHtml(String(value))}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            ` : ''}
+                <div class="bg-slate-900 bg-opacity-60 rounded-xl border border-slate-600 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-900 flex items-center justify-between cursor-pointer hover:bg-slate-800 transition-colors" onclick="toggleAttackHost('net-${netId}')">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path>
+                            </svg>
+                            <span class="font-bold text-blue-300">${escapeHtml(net === 'unknown' ? 'Unknown Network' : net)}</span>
+                            <span class="text-sm text-gray-400">${ipCount} host${ipCount !== 1 ? 's' : ''} · ${netLogs.length} attack${netLogs.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm text-green-400">✓ ${netSuccess}</span>
+                            <span class="text-sm text-red-400">✗ ${netFailed}</span>
+                            <span class="text-sm text-yellow-400">⏱ ${netTimeout}</span>
+                            <svg id="attack-chevron-net-${netId}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
                         </div>
                     </div>
-                </div>
+                    <div id="attack-host-net-${netId}" class="hidden px-4 py-3 space-y-3">
             `;
+
+            Object.keys(logsByNetwork[net]).sort().forEach(ip => {
+                html += _buildAttackHostBlock(ip, logsByNetwork[net][ip]);
+            });
+
+            html += `</div></div>`;
         });
-        
-        html += `
-                </div>
-            </div>
-        `;
-    });
-    
+
+    } else {
+        // --- Default: Group by IP ---
+        const logsByIP = {};
+        logs.forEach(log => {
+            const ip = log.target_ip || 'Unknown';
+            if (!logsByIP[ip]) logsByIP[ip] = [];
+            logsByIP[ip].push(log);
+        });
+
+        Object.keys(logsByIP).sort().forEach(ip => {
+            html += _buildAttackHostBlock(ip, logsByIP[ip]);
+        });
+    }
+
     html += '</div>';
-    
     document.getElementById('attack-logs-container').innerHTML = html;
 }
 
-function toggleAttackHost(ip) {
-    const containerId = `attack-host-${ip.replace(/\./g, '-')}`;
-    const chevronId = `attack-chevron-${ip.replace(/\./g, '-')}`;
-    const container = document.getElementById(containerId);
-    const chevron = document.getElementById(chevronId);
-    
+function toggleAttackHost(safeId) {
+    const container = document.getElementById(`attack-host-${safeId}`);
+    const chevron   = document.getElementById(`attack-chevron-${safeId}`);
+    if (!container || !chevron) return;
     if (container.classList.contains('hidden')) {
         container.classList.remove('hidden');
         chevron.classList.add('rotate-180');
@@ -9396,6 +9477,25 @@ function setupEpaperAutoRefresh() {
 
 let currentDirectory = '/';
 let fileOperationInProgress = false;
+let currentFileSort = 'name';
+let currentFileSearch = '';
+
+function setFileSort(sort) {
+    currentFileSort = sort;
+    document.querySelectorAll('.file-sort-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-sort') === sort;
+        btn.classList.toggle('bg-Ragnar-600', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+        btn.classList.toggle('hover:text-white', !isActive);
+    });
+    refreshFiles();
+}
+
+function onFileSearch(value) {
+    currentFileSearch = value.trim().toLowerCase();
+    refreshFiles();
+}
 
 function loadFiles(path = '/', highlightFile = null) {
     if (fileOperationInProgress) return;
@@ -9442,13 +9542,25 @@ function displayFiles(files, path, highlightFile = null) {
         `;
     }
     
-    // Sort files - directories first, then by name
+    // Apply search filter (only to files, not directories)
+    if (currentFileSearch) {
+        files = files.filter(f => f.is_directory || f.name.toLowerCase().includes(currentFileSearch));
+    }
+
+    if (files.length === 0 && currentFileSearch) {
+        fileList.innerHTML = `<p class="text-gray-400 p-4">No files match "<span class="text-white">${escapeHtml(currentFileSearch)}</span>"</p>`;
+        return false;
+    }
+
+    // Sort: directories always first, then apply chosen sort within each group
     files.sort((a, b) => {
         if (a.is_directory && !b.is_directory) return -1;
         if (!a.is_directory && b.is_directory) return 1;
+        if (currentFileSort === 'date') return (b.modified || 0) - (a.modified || 0);
+        if (currentFileSort === 'size') return (b.size || 0) - (a.size || 0);
         return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     });
-    
+
     files.forEach(file => {
         const icon = file.is_directory ? 
             `<svg class="w-5 h-5 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
