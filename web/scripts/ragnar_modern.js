@@ -1112,7 +1112,14 @@ async function loadDashboardData() {
         if (data) {
             // Update status block immediately
             updateDashboardStatus(data);
-            await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            // Only fetch network-specific stats if a specific network is selected;
+            // otherwise /api/dashboard/quick already has the correct data (instant).
+            const { network } = getSelectedDashboardNetworkKey();
+            if (network) {
+                await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            } else {
+                updateDashboardStats(data);
+            }
         }
         
         // Load AI insights if configured
@@ -5749,7 +5756,7 @@ function renderConnectTabMultiInterface(state) {
     const focusInterface = state.focus_interface || '';
     const focusSsid = state.focus_interface_ssid || '';
     const globalEnabled = scanMode === 'multi';
-    pillEl.textContent = globalEnabled ? 'All adapters' : 'Single focus';
+    pillEl.textContent = globalEnabled ? 'Single focus' : 'All adapters';
     pillEl.className = `text-xs px-2 py-1 rounded ${globalEnabled ? 'bg-green-700 text-green-100' : 'bg-amber-700 text-amber-100'}`;
     if (noteEl) {
         const maxAdapters = state.max_interfaces || 1;
@@ -5889,7 +5896,7 @@ async function setMultiInterfaceMode(mode, button) {
     }
     try {
         await postAPI('/api/wifi/scan-control/mode', { mode });
-        addConsoleMessage(mode === 'multi' ? 'Scanning all eligible adapters' : 'Single-adapter focus enabled', 'info');
+        addConsoleMessage(mode === 'multi' ? 'Single focus mode enabled' : 'All adapters mode enabled', 'info');
         await refreshWifiStatus();
     } catch (error) {
         console.error('Unable to update scan mode:', error);

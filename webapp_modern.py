@@ -1050,6 +1050,10 @@ def _execute_pwn_mode_switch(target_mode: str) -> None:
     if target_mode == 'pwnagotchi':
         _ensure_pwn_launcher()
 
+        # Stop the display loop FIRST so it doesn't overwrite the transition message.
+        # E-paper retains its image without power, so the message stays visible.
+        shared_data.display_should_exit = True
+
         # Show transition message on e-paper before Ragnar stops.
         # Run in a thread with a timeout so a blocked SPI bus never hangs the swap.
         _epd_t = threading.Thread(target=_show_epaper_transition, args=("Switching to Pwnagotchi...",), daemon=True)
@@ -1077,8 +1081,8 @@ def _execute_pwn_mode_switch(target_mode: str) -> None:
                 ['systemd-run', '--no-block', '--collect',
                  '--unit=ragnar-to-pwnagotchi-swap',
                  'bash', '-c',
-                 'sleep 1 && systemctl stop ragnar.service'
-                 ' && sleep 3'
+                 'systemctl stop ragnar.service'
+                 ' && python3 -OO /home/ragnar/Ragnar/wipe_epd.py 2>/dev/null; true'
                  ' && systemctl start bettercap.service'
                  ' && systemctl start pwnagotchi.service'],
                 stdout=subprocess.DEVNULL,
@@ -11548,13 +11552,19 @@ def get_traffic_host_details(ip):
 # ADVANCED VULNERABILITY SCANNING API ENDPOINTS
 # ============================================================================
 
-# Global advanced vuln scanner instance
+# Global advanced vuln scanner instance (thread-safe singleton)
 _advanced_vuln_scanner_instance = None
+_advanced_vuln_scanner_lock = threading.Lock()
 
 def get_advanced_vuln_scanner():
-    """Get or create advanced vuln scanner instance"""
+    """Get or create advanced vuln scanner instance (thread-safe)"""
     global _advanced_vuln_scanner_instance
-    if _advanced_vuln_scanner_instance is None:
+    if _advanced_vuln_scanner_instance is not None:
+        return _advanced_vuln_scanner_instance
+    with _advanced_vuln_scanner_lock:
+        # Double-check after acquiring lock
+        if _advanced_vuln_scanner_instance is not None:
+            return _advanced_vuln_scanner_instance
         try:
             from advanced_vuln_scanner import AdvancedVulnScanner
             _advanced_vuln_scanner_instance = AdvancedVulnScanner(shared_data)
@@ -13768,8 +13778,15 @@ def run_server(host='0.0.0.0', port=8000, ssl_cert=None, ssl_key=None, https_por
         if use_https:
             logger.info("⚠️  Using self-signed certificate - browser will show security warning")
 
-        # Prime synchronized data before clients connect
-        sync_all_counts()
+        # Synchronize counts in the background so the web server binds
+        # immediately instead of waiting for a full DB scan first.
+        def _deferred_sync():
+            try:
+                sync_all_counts()
+                logger.info("Initial sync_all_counts completed")
+            except Exception as e:
+                logger.error(f"Deferred sync_all_counts error: {e}")
+        socketio.start_background_task(_deferred_sync)
 
         # Start background status broadcaster
         socketio.start_background_task(broadcast_status_updates)
