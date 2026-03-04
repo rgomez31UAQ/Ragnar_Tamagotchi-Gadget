@@ -45,6 +45,149 @@ let releaseGateResolver = null;
 let releaseGatePendingPromise = null;
 let threatIntelStatusFilter = 'open';
 
+// ── Credential Table state ──────────────────────────────────────
+let credentialsCache = null;
+let credServiceFilter = 'all';
+let credIPSearch = '';
+let credSortCol = 'ip';
+let credSortAsc = true;
+
+const CRED_SERVICE_PORTS = { ssh: 22, smb: 445, ftp: 21, telnet: 23, rdp: 3389, sql: 3306 };
+const CRED_SERVICE_COLORS = {
+    ssh:    'bg-blue-900 text-blue-300',
+    smb:    'bg-purple-900 text-purple-300',
+    ftp:    'bg-yellow-900 text-yellow-300',
+    telnet: 'bg-orange-900 text-orange-300',
+    rdp:    'bg-pink-900 text-pink-300',
+    sql:    'bg-green-900 text-green-300',
+};
+
+async function loadCredentials(force = false) {
+    if (!force && credentialsCache) { displayCredentials(credentialsCache); return; }
+    try {
+        const data = await fetchAPI('/api/credentials');
+        // Flatten into unified array
+        const flat = [];
+        Object.entries(data).forEach(([svc, entries]) => {
+            (entries || []).forEach(e => flat.push({ ...e, service: svc }));
+        });
+        credentialsCache = flat;
+        displayCredentials(flat);
+    } catch(err) {
+        const tbody = document.getElementById('cred-table-body');
+        if (tbody) tbody.innerHTML =
+            `<tr><td colspan="6" class="py-8 text-center text-red-400">Error loading credentials: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function onCredSearch(val) { credIPSearch = val.trim().toLowerCase(); displayCredentials(credentialsCache); }
+
+function filterCredsByService(svc) {
+    credServiceFilter = svc;
+    document.querySelectorAll('.cred-svc-btn').forEach(b => {
+        const active = b.getAttribute('data-svc') === svc;
+        b.classList.toggle('bg-Ragnar-600', active);
+        b.classList.toggle('bg-slate-700', !active);
+        b.classList.toggle('hover:bg-slate-600', !active);
+    });
+    displayCredentials(credentialsCache);
+}
+
+function sortCredsBy(col) {
+    if (credSortCol === col) { credSortAsc = !credSortAsc; } else { credSortCol = col; credSortAsc = true; }
+    ['ip','service','username'].forEach(c => {
+        const el = document.getElementById(`cred-sort-${c}`);
+        if (el) el.textContent = c === credSortCol ? (credSortAsc ? '↑' : '↓') : '';
+    });
+    displayCredentials(credentialsCache);
+}
+
+function displayCredentials(data) {
+    if (!data) return;
+    const tbody = document.getElementById('cred-table-body');
+    const statsEl = document.getElementById('cred-stats');
+    const countEl = document.getElementById('cred-table-count');
+    if (!tbody) return;
+
+    // Build stats
+    const svcCounts = {};
+    data.forEach(c => { svcCounts[c.service] = (svcCounts[c.service] || 0) + 1; });
+    const totalCreds = data.length;
+    let statsHtml = `<div class="bg-slate-800 rounded-lg p-3 text-center"><div class="text-2xl font-bold">${totalCreds}</div><div class="text-xs text-gray-400 mt-1">Total</div></div>`;
+    Object.entries(CRED_SERVICE_PORTS).forEach(([svc]) => {
+        const count = svcCounts[svc] || 0;
+        statsHtml += `<div class="bg-slate-800 rounded-lg p-3 text-center cursor-pointer hover:bg-slate-700 transition-colors" onclick="filterCredsByService('${svc}')">
+            <div class="text-2xl font-bold ${count > 0 ? 'text-green-400' : 'text-gray-500'}">${count}</div>
+            <div class="text-xs text-gray-400 mt-1 uppercase">${svc}</div>
+        </div>`;
+    });
+    if (statsEl) statsEl.innerHTML = statsHtml;
+
+    // Filter
+    let rows = data;
+    if (credServiceFilter !== 'all') rows = rows.filter(r => r.service === credServiceFilter);
+    if (credIPSearch) rows = rows.filter(r => (r.ip || '').toLowerCase().includes(credIPSearch));
+
+    // Sort
+    rows = [...rows].sort((a, b) => {
+        const av = (a[credSortCol] || '').toLowerCase();
+        const bv = (b[credSortCol] || '').toLowerCase();
+        return credSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-gray-400">No credentials match current filters</td></tr>`;
+        if (countEl) countEl.textContent = '';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+        const port = CRED_SERVICE_PORTS[r.service] || '—';
+        const badge = CRED_SERVICE_COLORS[r.service] || 'bg-slate-700 text-gray-300';
+        const pwDisplay = r.password ? `<span class="font-mono">${escapeHtml(r.password)}</span>` : '<span class="text-gray-500 italic">none</span>';
+        const safePw = r.password ? escapeHtml(r.password).replace(/'/g, '&#39;') : '';
+        return `<tr class="border-b border-slate-800 hover:bg-slate-800 transition-colors">
+            <td class="py-3 px-4 font-mono text-sm">${escapeHtml(r.ip || '—')}</td>
+            <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-xs font-semibold uppercase ${badge}">${escapeHtml(r.service)}</span></td>
+            <td class="py-3 px-4 text-gray-400">${port}</td>
+            <td class="py-3 px-4 font-mono">${escapeHtml(r.username || '—')}</td>
+            <td class="py-3 px-4">${pwDisplay}</td>
+            <td class="py-3 px-4">
+                ${r.password ? `<button onclick="copyCredToClipboard('${safePw}')" class="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors" title="Copy password">Copy</button>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+
+    if (countEl) countEl.textContent = `Showing ${rows.length} of ${data.length} credential${data.length !== 1 ? 's' : ''}`;
+}
+
+function copyCredToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        addConsoleMessage('Password copied to clipboard', 'success');
+    }).catch(() => {
+        addConsoleMessage('Copy failed — check browser permissions', 'warning');
+    });
+}
+
+function exportCredentialsCSV() {
+    if (!credentialsCache || credentialsCache.length === 0) {
+        addConsoleMessage('No credentials to export', 'warning');
+        return;
+    }
+    const csvRows = [['IP', 'Service', 'Port', 'Username', 'Password']];
+    credentialsCache.forEach(r => {
+        csvRows.push([r.ip || '', r.service || '', CRED_SERVICE_PORTS[r.service] || '', r.username || '', r.password || '']);
+    });
+    const csv = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ragnar_credentials_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 const configMetadata = {
     manual_mode: {
         label: "Pentest Mode",
@@ -939,6 +1082,8 @@ async function loadTabData(tabName) {
             break;
         case 'network-map':
             if (!_mapInitialized) { _mapInitialized = true; loadNetworkMap(); }
+        case 'credentials':
+            loadCredentials();
             break;
     }
 }
@@ -969,7 +1114,14 @@ async function loadDashboardData() {
         if (data) {
             // Update status block immediately
             updateDashboardStatus(data);
-            await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            // Only fetch network-specific stats if a specific network is selected;
+            // otherwise /api/dashboard/quick already has the correct data (instant).
+            const { network } = getSelectedDashboardNetworkKey();
+            if (network) {
+                await refreshDashboardStatsForCurrentSelection({ forceRefresh: true, fallbackData: data });
+            } else {
+                updateDashboardStats(data);
+            }
         }
         
         // Load AI insights if configured
@@ -2419,15 +2571,118 @@ function renderHostRow(normalized) {
         <td class="py-3 px-4 text-sm" data-label="Vulnerabilities">${formatVulnerabilityCell(normalized)}</td>
         <td class="py-3 px-4 text-sm" data-label="Last Scan">${formatLastScanCell(normalized.lastScan)}</td>
         <td class="py-3 px-4" data-label="Actions">
-                <button onclick="triggerDeepScan('${normalized.ip}', { mode: 'full' })" 
+                <button onclick="triggerDeepScan('${normalized.ip}', { mode: 'full' })"
                     id="deep-scan-btn-${normalized.ip.replace(/\./g, '-')}"
                     data-scan-status="idle"
                     class="deep-scan-button bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1 rounded transition-all duration-300"
                     title="Scan all 65535 ports with TCP connect (-sT). IP: ${normalized.ip}">
                 Deep Scan
             </button>
+            <button onclick="openHostPanel('${normalized.ip}')" class="bg-slate-600 hover:bg-slate-500 text-white text-xs px-3 py-1 rounded transition-colors ml-1" title="View host details">
+                Details
+            </button>
         </td>
     `;
+}
+
+// ── Host Detail Panel ───────────────────────────────────────────
+function openHostPanel(ip) {
+    const panel = document.getElementById('host-detail-panel');
+    const overlay = document.getElementById('host-detail-overlay');
+    if (!panel || !overlay) return;
+
+    // Show panel immediately with loading state
+    document.getElementById('hdp-ip').textContent = ip;
+    document.getElementById('hdp-hostname').textContent = 'Loading...';
+    document.getElementById('hdp-status').textContent = '—';
+    document.getElementById('hdp-mac').textContent = '—';
+    document.getElementById('hdp-lastseen').textContent = '—';
+    document.getElementById('hdp-portcount').textContent = '—';
+    document.getElementById('hdp-ports').innerHTML = '<span class="text-gray-400 text-sm">Loading...</span>';
+    document.getElementById('hdp-creds').innerHTML = '<p class="text-gray-400 text-sm">Loading...</p>';
+    document.getElementById('hdp-attacks').innerHTML = '<p class="text-gray-400 text-sm">Loading...</p>';
+    document.getElementById('hdp-vuln-section').classList.add('hidden');
+
+    overlay.classList.remove('hidden');
+    panel.classList.remove('translate-x-full');
+
+    networkAwareFetch(`/api/host/${encodeURIComponent(ip)}`)
+        .then(r => r.json())
+        .then(data => renderHostPanel(data))
+        .catch(err => {
+            document.getElementById('hdp-hostname').textContent = 'Error loading data';
+        });
+}
+
+function closeHostPanel() {
+    const panel = document.getElementById('host-detail-panel');
+    const overlay = document.getElementById('host-detail-overlay');
+    if (panel) panel.classList.add('translate-x-full');
+    if (overlay) overlay.classList.add('hidden');
+}
+
+function renderHostPanel(data) {
+    const statusColors = { alive: 'text-green-400', degraded: 'text-yellow-400', unknown: 'text-gray-400' };
+
+    document.getElementById('hdp-ip').textContent = data.ip || '—';
+    document.getElementById('hdp-hostname').textContent = data.hostname || 'No hostname';
+    document.getElementById('hdp-status').innerHTML = `<span class="${statusColors[data.status] || 'text-gray-400'}">${data.status || 'unknown'}</span>`;
+    document.getElementById('hdp-mac').textContent = data.mac || '—';
+    document.getElementById('hdp-lastseen').textContent = data.last_seen || '—';
+    document.getElementById('hdp-portcount').textContent = `${(data.ports || []).length} port${(data.ports||[]).length !== 1 ? 's' : ''}`;
+
+    // Ports
+    const portsEl = document.getElementById('hdp-ports');
+    if (data.ports && data.ports.length > 0) {
+        portsEl.innerHTML = data.ports.map(p =>
+            `<span class="px-2 py-1 bg-slate-700 rounded text-xs font-mono">${escapeHtml(p)}</span>`
+        ).join('');
+    } else {
+        portsEl.innerHTML = '<span class="text-gray-500 text-sm">None detected</span>';
+    }
+
+    // Credentials
+    const credsEl = document.getElementById('hdp-creds');
+    if (data.credentials && data.credentials.length > 0) {
+        const svcColors = { ssh:'bg-blue-900 text-blue-300', smb:'bg-purple-900 text-purple-300', ftp:'bg-yellow-900 text-yellow-300', telnet:'bg-orange-900 text-orange-300', rdp:'bg-pink-900 text-pink-300', sql:'bg-green-900 text-green-300' };
+        credsEl.innerHTML = data.credentials.map(c => `
+            <div class="flex items-center justify-between bg-slate-800 rounded-lg px-3 py-2">
+                <div class="flex items-center gap-2">
+                    <span class="px-1.5 py-0.5 rounded text-xs font-semibold uppercase ${svcColors[c.service] || 'bg-slate-700 text-gray-300'}">${c.service}</span>
+                    <span class="font-mono text-sm">${escapeHtml(c.username || '—')}</span>
+                    <span class="text-gray-500">:</span>
+                    <span class="font-mono text-sm text-green-300">${escapeHtml(c.password || '—')}</span>
+                </div>
+            </div>`).join('');
+    } else {
+        credsEl.innerHTML = '<p class="text-gray-500 text-sm">No credentials found</p>';
+    }
+
+    // Attack logs
+    const attacksEl = document.getElementById('hdp-attacks');
+    if (data.attack_logs && data.attack_logs.length > 0) {
+        const statusC = { success:'text-green-400', failed:'text-red-400', timeout:'text-yellow-400' };
+        attacksEl.innerHTML = data.attack_logs.map(a => `
+            <div class="bg-slate-800 rounded-lg px-3 py-2 text-xs">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="font-semibold ${statusC[a.status] || 'text-gray-400'}">${a.attack_type}</span>
+                    <span class="text-gray-500">${a.timestamp}</span>
+                </div>
+                ${a.message ? `<p class="text-gray-300">${escapeHtml(a.message)}</p>` : ''}
+            </div>`).join('');
+    } else {
+        attacksEl.innerHTML = '<p class="text-gray-500 text-sm">No attack history</p>';
+    }
+
+    // Vuln summary
+    const vulnSection = document.getElementById('hdp-vuln-section');
+    const vulnEl = document.getElementById('hdp-vuln');
+    if (data.vuln_summary) {
+        vulnEl.textContent = data.vuln_summary;
+        vulnSection.classList.remove('hidden');
+    } else {
+        vulnSection.classList.add('hidden');
+    }
 }
 
 function updateHostCountDisplay() {
@@ -2521,6 +2776,9 @@ async function loadLootData() {
 
 // Attack Logs Functions
 let currentAttackFilter = 'all';
+let currentAttackGroupBy = 'ip';
+let currentAttackNetworkFilter = 'all';
+let currentAttackIPSearch = '';
 let attackLogsCache = null;
 let attackLogsETag = null;
 let attackLogsInFlight = null;
@@ -2612,6 +2870,116 @@ async function refreshAttackLogs() {
     await loadAttackLogs({ force: true });
 }
 
+function setAttackGroupBy(groupBy) {
+    currentAttackGroupBy = groupBy;
+    document.querySelectorAll('.attack-groupby-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-groupby') === groupBy;
+        btn.classList.toggle('bg-Ragnar-600', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+        btn.classList.toggle('hover:text-white', !isActive);
+    });
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function filterAttackByNetwork(network) {
+    currentAttackNetworkFilter = network;
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function onAttackIPSearch(value) {
+    currentAttackIPSearch = value.trim().toLowerCase();
+    if (attackLogsCache) displayAttackLogs(attackLogsCache);
+}
+
+function _updateAttackNetworkDropdown(networks) {
+    const select = document.getElementById('attack-network-filter');
+    if (!select) return;
+    const current = select.value;
+    // Rebuild options preserving selection
+    select.innerHTML = '<option value="all">All Networks</option>';
+    (networks || []).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = n === 'unknown' ? 'Unknown Network' : n;
+        if (n === current) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+function _buildAttackHostBlock(ip, hostLogs) {
+    const successCount = hostLogs.filter(l => l.status === 'success').length;
+    const failedCount  = hostLogs.filter(l => l.status === 'failed').length;
+    const timeoutCount = hostLogs.filter(l => l.status === 'timeout').length;
+    const safeId = ip.replace(/[^a-zA-Z0-9]/g, '-');
+
+    let html = `
+        <div class="bg-slate-800 bg-opacity-50 rounded-lg border border-slate-700 overflow-hidden">
+            <div class="px-4 py-3 bg-slate-900 bg-opacity-50 flex items-center justify-between cursor-pointer hover:bg-opacity-70 transition-colors" onclick="toggleAttackHost('${safeId}')">
+                <div class="flex items-center space-x-3">
+                    <svg class="w-5 h-5 text-Ragnar-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
+                    </svg>
+                    <span class="font-semibold text-lg">${ip}</span>
+                    <span class="text-sm text-gray-400">(${hostLogs.length} attacks)</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-green-400">✓ ${successCount}</span>
+                    <span class="text-sm text-red-400">✗ ${failedCount}</span>
+                    <span class="text-sm text-yellow-400">⏱ ${timeoutCount}</span>
+                    <svg id="attack-chevron-${safeId}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+            </div>
+            <div id="attack-host-${safeId}" class="hidden px-4 py-3 space-y-2">
+    `;
+
+    hostLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    hostLogs.forEach(log => {
+        const statusColors = {
+            'success': 'bg-green-900 bg-opacity-30 border-green-500',
+            'failed':  'bg-red-900 bg-opacity-30 border-red-500',
+            'timeout': 'bg-yellow-900 bg-opacity-30 border-yellow-500'
+        };
+        const statusIcons      = { 'success': '✓', 'failed': '✗', 'timeout': '⏱' };
+        const statusTextColors = { 'success': 'text-green-400', 'failed': 'text-red-400', 'timeout': 'text-yellow-400' };
+
+        const colorClass = statusColors[log.status]     || 'bg-gray-900 bg-opacity-30 border-gray-500';
+        const icon       = statusIcons[log.status]      || '•';
+        const textColor  = statusTextColors[log.status] || 'text-gray-400';
+
+        html += `
+            <div class="border-l-4 ${colorClass} p-3 rounded-r-lg">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-2 mb-1">
+                            <span class="font-semibold ${textColor}">${icon} ${log.attack_type}</span>
+                            ${log.target_port ? `<span class="text-xs text-gray-400">Port ${log.target_port}</span>` : ''}
+                            <span class="text-xs text-gray-500">${log.timestamp}</span>
+                        </div>
+                        ${log.message ? `<p class="text-sm text-gray-300 mb-2">${escapeHtml(log.message)}</p>` : ''}
+                        ${Object.keys(log.details || {}).length > 0 ? `
+                            <div class="text-xs space-y-1 mt-2">
+                                ${Object.entries(log.details).map(([key, value]) => `
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-gray-500">${key}:</span>
+                                        <span class="text-gray-300 font-mono">${escapeHtml(String(value))}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div></div>`;
+    return html;
+}
+
 function displayAttackLogs(data) {
     if (!data || !data.attack_logs) {
         document.getElementById('attack-logs-container').innerHTML = `
@@ -2624,149 +2992,117 @@ function displayAttackLogs(data) {
         `;
         return;
     }
-    
+
     // Update statistics
     document.getElementById('attack-stat-total').textContent = data.total_count || 0;
     document.getElementById('attack-stat-success').textContent = data.success_count || 0;
     document.getElementById('attack-stat-failed').textContent = data.failed_count || 0;
-    
-    // Calculate timeout count
     const timeoutCount = data.attack_logs.filter(log => log.status === 'timeout').length;
     document.getElementById('attack-stat-timeout').textContent = timeoutCount;
-    
-    // Filter logs based on current filter
+
+    // Populate network dropdown from available_networks returned by the API
+    _updateAttackNetworkDropdown(data.available_networks || []);
+
+    // Apply status filter
     let logs = data.attack_logs;
     if (currentAttackFilter !== 'all') {
         logs = logs.filter(log => log.status === currentAttackFilter);
     }
-    
+
+    // Apply network filter
+    if (currentAttackNetworkFilter !== 'all') {
+        logs = logs.filter(log => (log.network_ssid || 'unknown') === currentAttackNetworkFilter);
+    }
+
+    // Apply IP search filter
+    if (currentAttackIPSearch) {
+        logs = logs.filter(log => (log.target_ip || '').toLowerCase().includes(currentAttackIPSearch));
+    }
+
     if (logs.length === 0) {
         document.getElementById('attack-logs-container').innerHTML = `
             <div class="text-center text-gray-400 py-8">
                 <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                 </svg>
-                <p>No ${currentAttackFilter === 'all' ? '' : currentAttackFilter} attacks found</p>
+                <p>No attacks match the current filters</p>
             </div>
         `;
         return;
     }
-    
-    // Group logs by IP address
-    const logsByIP = {};
-    logs.forEach(log => {
-        const ip = log.target_ip || 'Unknown';
-        if (!logsByIP[ip]) {
-            logsByIP[ip] = [];
-        }
-        logsByIP[ip].push(log);
-    });
-    
-    // Sort IPs
-    const sortedIPs = Object.keys(logsByIP).sort();
-    
-    // Build HTML
+
     let html = '<div class="space-y-4">';
-    
-    sortedIPs.forEach(ip => {
-        const hostLogs = logsByIP[ip];
-        const successCount = hostLogs.filter(l => l.status === 'success').length;
-        const failedCount = hostLogs.filter(l => l.status === 'failed').length;
-        const timeoutCount = hostLogs.filter(l => l.status === 'timeout').length;
-        
-        html += `
-            <div class="bg-slate-800 bg-opacity-50 rounded-lg border border-slate-700 overflow-hidden">
-                <div class="px-4 py-3 bg-slate-900 bg-opacity-50 flex items-center justify-between cursor-pointer hover:bg-opacity-70 transition-colors" onclick="toggleAttackHost('${ip}')">
-                    <div class="flex items-center space-x-3">
-                        <svg class="w-5 h-5 text-Ragnar-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>
-                        </svg>
-                        <span class="font-semibold text-lg">${ip}</span>
-                        <span class="text-sm text-gray-400">(${hostLogs.length} attacks)</span>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <span class="text-sm text-green-400">✓ ${successCount}</span>
-                        <span class="text-sm text-red-400">✗ ${failedCount}</span>
-                        <span class="text-sm text-yellow-400">⏱ ${timeoutCount}</span>
-                        <svg id="attack-chevron-${ip.replace(/\./g, '-')}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </div>
-                </div>
-                <div id="attack-host-${ip.replace(/\./g, '-')}" class="hidden px-4 py-3 space-y-2">
-        `;
-        
-        // Sort logs by timestamp (most recent first)
-        hostLogs.sort((a, b) => {
-            return new Date(b.timestamp) - new Date(a.timestamp);
+
+    if (currentAttackGroupBy === 'network') {
+        // --- Group by Network (SSID), then sub-group by IP ---
+        const logsByNetwork = {};
+        logs.forEach(log => {
+            const net = log.network_ssid || 'unknown';
+            if (!logsByNetwork[net]) logsByNetwork[net] = {};
+            const ip = log.target_ip || 'Unknown';
+            if (!logsByNetwork[net][ip]) logsByNetwork[net][ip] = [];
+            logsByNetwork[net][ip].push(log);
         });
-        
-        hostLogs.forEach(log => {
-            const statusColors = {
-                'success': 'bg-green-900 bg-opacity-30 border-green-500',
-                'failed': 'bg-red-900 bg-opacity-30 border-red-500',
-                'timeout': 'bg-yellow-900 bg-opacity-30 border-yellow-500'
-            };
-            
-            const statusIcons = {
-                'success': '✓',
-                'failed': '✗',
-                'timeout': '⏱'
-            };
-            
-            const statusTextColors = {
-                'success': 'text-green-400',
-                'failed': 'text-red-400',
-                'timeout': 'text-yellow-400'
-            };
-            
-            const colorClass = statusColors[log.status] || 'bg-gray-900 bg-opacity-30 border-gray-500';
-            const icon = statusIcons[log.status] || '•';
-            const textColor = statusTextColors[log.status] || 'text-gray-400';
-            
+
+        Object.keys(logsByNetwork).sort().forEach(net => {
+            const netId = net.replace(/[^a-zA-Z0-9]/g, '-');
+            const netLogs = Object.values(logsByNetwork[net]).flat();
+            const netSuccess = netLogs.filter(l => l.status === 'success').length;
+            const netFailed  = netLogs.filter(l => l.status === 'failed').length;
+            const netTimeout = netLogs.filter(l => l.status === 'timeout').length;
+            const ipCount = Object.keys(logsByNetwork[net]).length;
+
             html += `
-                <div class="border-l-4 ${colorClass} p-3 rounded-r-lg">
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <div class="flex items-center space-x-2 mb-1">
-                                <span class="font-semibold ${textColor}">${icon} ${log.attack_type}</span>
-                                ${log.target_port ? `<span class="text-xs text-gray-400">Port ${log.target_port}</span>` : ''}
-                                <span class="text-xs text-gray-500">${log.timestamp}</span>
-                            </div>
-                            ${log.message ? `<p class="text-sm text-gray-300 mb-2">${escapeHtml(log.message)}</p>` : ''}
-                            ${Object.keys(log.details || {}).length > 0 ? `
-                                <div class="text-xs space-y-1 mt-2">
-                                    ${Object.entries(log.details).map(([key, value]) => `
-                                        <div class="flex items-center space-x-2">
-                                            <span class="text-gray-500">${key}:</span>
-                                            <span class="text-gray-300 font-mono">${escapeHtml(String(value))}</span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            ` : ''}
+                <div class="bg-slate-900 bg-opacity-60 rounded-xl border border-slate-600 overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-900 flex items-center justify-between cursor-pointer hover:bg-slate-800 transition-colors" onclick="toggleAttackHost('net-${netId}')">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"></path>
+                            </svg>
+                            <span class="font-bold text-blue-300">${escapeHtml(net === 'unknown' ? 'Unknown Network' : net)}</span>
+                            <span class="text-sm text-gray-400">${ipCount} host${ipCount !== 1 ? 's' : ''} · ${netLogs.length} attack${netLogs.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm text-green-400">✓ ${netSuccess}</span>
+                            <span class="text-sm text-red-400">✗ ${netFailed}</span>
+                            <span class="text-sm text-yellow-400">⏱ ${netTimeout}</span>
+                            <svg id="attack-chevron-net-${netId}" class="w-5 h-5 text-gray-400 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
                         </div>
                     </div>
-                </div>
+                    <div id="attack-host-net-${netId}" class="hidden px-4 py-3 space-y-3">
             `;
+
+            Object.keys(logsByNetwork[net]).sort().forEach(ip => {
+                html += _buildAttackHostBlock(ip, logsByNetwork[net][ip]);
+            });
+
+            html += `</div></div>`;
         });
-        
-        html += `
-                </div>
-            </div>
-        `;
-    });
-    
+
+    } else {
+        // --- Default: Group by IP ---
+        const logsByIP = {};
+        logs.forEach(log => {
+            const ip = log.target_ip || 'Unknown';
+            if (!logsByIP[ip]) logsByIP[ip] = [];
+            logsByIP[ip].push(log);
+        });
+
+        Object.keys(logsByIP).sort().forEach(ip => {
+            html += _buildAttackHostBlock(ip, logsByIP[ip]);
+        });
+    }
+
     html += '</div>';
-    
     document.getElementById('attack-logs-container').innerHTML = html;
 }
 
-function toggleAttackHost(ip) {
-    const containerId = `attack-host-${ip.replace(/\./g, '-')}`;
-    const chevronId = `attack-chevron-${ip.replace(/\./g, '-')}`;
-    const container = document.getElementById(containerId);
-    const chevron = document.getElementById(chevronId);
-    
+function toggleAttackHost(safeId) {
+    const container = document.getElementById(`attack-host-${safeId}`);
+    const chevron   = document.getElementById(`attack-chevron-${safeId}`);
+    if (!container || !chevron) return;
     if (container.classList.contains('hidden')) {
         container.classList.remove('hidden');
         chevron.classList.add('rotate-180');
@@ -5606,7 +5942,7 @@ function renderConnectTabMultiInterface(state) {
     const focusInterface = state.focus_interface || '';
     const focusSsid = state.focus_interface_ssid || '';
     const globalEnabled = scanMode === 'multi';
-    pillEl.textContent = globalEnabled ? 'All adapters' : 'Single focus';
+    pillEl.textContent = globalEnabled ? 'Single focus' : 'All adapters';
     pillEl.className = `text-xs px-2 py-1 rounded ${globalEnabled ? 'bg-green-700 text-green-100' : 'bg-amber-700 text-amber-100'}`;
     if (noteEl) {
         const maxAdapters = state.max_interfaces || 1;
@@ -5746,7 +6082,7 @@ async function setMultiInterfaceMode(mode, button) {
     }
     try {
         await postAPI('/api/wifi/scan-control/mode', { mode });
-        addConsoleMessage(mode === 'multi' ? 'Scanning all eligible adapters' : 'Single-adapter focus enabled', 'info');
+        addConsoleMessage(mode === 'multi' ? 'Single focus mode enabled' : 'All adapters mode enabled', 'info');
         await refreshWifiStatus();
     } catch (error) {
         console.error('Unable to update scan mode:', error);
@@ -7843,112 +8179,96 @@ async function executeManualAttack() {
 
 async function startOrchestrator() {
     const statusEl = document.getElementById('system-control-status');
-    
-    try {
-        // Show status and start progress
-        if (statusEl) {
-            statusEl.classList.remove('hidden');
-            statusEl.textContent = 'Enabling automation...';
-            statusEl.className = 'text-sm text-blue-600 mt-4';
-        }
-        
-        addConsoleMessage('Enabling automation...', 'info');
-        
-        const data = await postAPI('/api/automation/orchestrator/start', {});
-        
-        if (data.success) {
-            const automationActive = data.automation_enabled !== false;
-            const modeLabelText = automationActive ? 'Auto' : 'Sleeping';
-            const modeClass = automationActive ? 'text-green-400 font-semibold' : 'text-purple-300 font-semibold';
 
-            addConsoleMessage('Automation enabled successfully', 'success');
-            updateElement('Ragnar-mode', modeLabelText);
-            const modeLabel = document.getElementById('Ragnar-mode');
-            if (modeLabel) {
-                modeLabel.className = modeClass;
-            }
-            
-            if (statusEl) {
-                statusEl.textContent = automationActive ? 'Automation enabled - Orchestrator running' : 'Automation queued - waiting for Wi-Fi';
-                statusEl.className = automationActive ? 'text-sm text-green-600 mt-4' : 'text-sm text-yellow-500 mt-4';
-                
-                // Hide status after 3 seconds
-                setTimeout(() => {
-                    if (statusEl) {
-                        statusEl.classList.add('hidden');
-                    }
-                }, 3000);
-            }
-            
-        } else {
-            addConsoleMessage(`Failed to start automatic mode: ${data.message || 'Unknown error'}`, 'error');
-            if (statusEl) {
-                statusEl.textContent = `Error: ${data.message || 'Failed to start automatic mode'}`;
-                statusEl.className = 'text-sm text-red-600 mt-4';
-            }
+    // Show status and start progress
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Enabling automation...';
+        statusEl.className = 'text-sm text-blue-600 mt-4';
+    }
+
+    addConsoleMessage('Enabling automation...', 'info');
+
+    const data = await postAPI('/api/automation/orchestrator/start', {});
+
+    if (data.success) {
+        const automationActive = data.automation_enabled !== false;
+        const modeLabelText = automationActive ? 'Auto' : 'Sleeping';
+        const modeClass = automationActive ? 'text-green-400 font-semibold' : 'text-purple-300 font-semibold';
+
+        addConsoleMessage(automationActive ? 'Automation enabled successfully' : 'Automation queued - waiting for connectivity', 'success');
+        updateElement('Ragnar-mode', modeLabelText);
+        const modeLabel = document.getElementById('Ragnar-mode');
+        if (modeLabel) {
+            modeLabel.className = modeClass;
         }
-        
-    } catch (error) {
-        console.error('Error starting orchestrator:', error);
-        addConsoleMessage('Failed to start automatic mode', 'error');
+
         if (statusEl) {
-            statusEl.textContent = `Error: ${error.message}`;
+            statusEl.textContent = automationActive ? 'Automation enabled - Orchestrator running' : 'Automation queued - waiting for connectivity';
+            statusEl.className = automationActive ? 'text-sm text-green-600 mt-4' : 'text-sm text-yellow-500 mt-4';
+
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                if (statusEl) {
+                    statusEl.classList.add('hidden');
+                }
+            }, 3000);
+        }
+
+    } else {
+        addConsoleMessage(`Failed to start automatic mode: ${data.message || 'Unknown error'}`, 'error');
+        if (statusEl) {
+            statusEl.textContent = `Error: ${data.message || 'Failed to start automatic mode'}`;
             statusEl.className = 'text-sm text-red-600 mt-4';
         }
     }
+
+    return data;
 }
 
 async function stopOrchestrator() {
     const statusEl = document.getElementById('system-control-status');
-    
-    try {
-        // Show status and start progress
+
+    // Show status and start progress
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Stopping automatic mode...';
+        statusEl.className = 'text-sm text-orange-600 mt-4';
+    }
+
+    addConsoleMessage('Disabling automation...', 'info');
+
+    const data = await postAPI('/api/automation/orchestrator/stop', {});
+
+    if (data.success) {
+        addConsoleMessage('Automation disabled - Orchestrator sleeping', 'warning');
+        updateElement('Ragnar-mode', 'Sleeping');
+        const modeLabel = document.getElementById('Ragnar-mode');
+        if (modeLabel) {
+            modeLabel.className = 'text-purple-300 font-semibold';
+        }
+
         if (statusEl) {
-            statusEl.classList.remove('hidden');
-            statusEl.textContent = 'Stopping automatic mode...';
+            statusEl.textContent = 'Automation disabled - Ragnar is sleeping';
             statusEl.className = 'text-sm text-orange-600 mt-4';
+
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                if (statusEl) {
+                    statusEl.classList.add('hidden');
+                }
+            }, 3000);
         }
-        
-        addConsoleMessage('Disabling automation...', 'info');
-        
-        const data = await postAPI('/api/automation/orchestrator/stop', {});
-        
-        if (data.success) {
-            addConsoleMessage('Automation disabled - Orchestrator sleeping', 'warning');
-            updateElement('Ragnar-mode', 'Sleeping');
-            const modeLabel = document.getElementById('Ragnar-mode');
-            if (modeLabel) {
-                modeLabel.className = 'text-purple-300 font-semibold';
-            }
-            
-            if (statusEl) {
-                statusEl.textContent = 'Automation disabled - Ragnar is sleeping';
-                statusEl.className = 'text-sm text-orange-600 mt-4';
-                
-                // Hide status after 3 seconds
-                setTimeout(() => {
-                    if (statusEl) {
-                        statusEl.classList.add('hidden');
-                    }
-                }, 3000);
-            }
-            
-        } else {
-            addConsoleMessage(`Failed to stop automatic mode: ${data.message || 'Unknown error'}`, 'error');
-            if (statusEl) {
-                statusEl.textContent = `Error: ${data.message || 'Failed to stop automatic mode'}`;
-                statusEl.className = 'text-sm text-red-600 mt-4';
-            }
-        }
-        
-    } catch (error) {
-        console.error('Error stopping orchestrator:', error);
-        addConsoleMessage('Failed to stop automatic mode', 'error');
+
+    } else {
+        addConsoleMessage(`Failed to stop automatic mode: ${data.message || 'Unknown error'}`, 'error');
         if (statusEl) {
-            statusEl.textContent = `Error: ${error.message}`;
+            statusEl.textContent = `Error: ${data.message || 'Failed to stop automatic mode'}`;
             statusEl.className = 'text-sm text-red-600 mt-4';
         }
     }
+
+    return data;
 }
 
 async function triggerNetworkScan() {
@@ -8354,13 +8674,16 @@ async function handleAutomationToggle() {
     button.textContent = action === 'start' ? 'Enabling...' : 'Disabling...';
 
     try {
+        let data;
         if (action === 'start') {
-            await startOrchestrator();
-            updateAutomationToggleButton(true, { force: true });
+            data = await startOrchestrator();
         } else {
-            await stopOrchestrator();
-            updateAutomationToggleButton(false, { force: true });
+            data = await stopOrchestrator();
         }
+
+        // Use the actual server-reported state instead of assuming success
+        const actualEnabled = data && data.success ? Boolean(data.automation_enabled) : !targetStateEnabled;
+        updateAutomationToggleButton(actualEnabled, { force: true });
 
         refreshDashboard().catch(() => {/* best effort */});
     } catch (error) {
@@ -9399,6 +9722,25 @@ function setupEpaperAutoRefresh() {
 
 let currentDirectory = '/';
 let fileOperationInProgress = false;
+let currentFileSort = 'name';
+let currentFileSearch = '';
+
+function setFileSort(sort) {
+    currentFileSort = sort;
+    document.querySelectorAll('.file-sort-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-sort') === sort;
+        btn.classList.toggle('bg-Ragnar-600', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+        btn.classList.toggle('hover:text-white', !isActive);
+    });
+    refreshFiles();
+}
+
+function onFileSearch(value) {
+    currentFileSearch = value.trim().toLowerCase();
+    refreshFiles();
+}
 
 function loadFiles(path = '/', highlightFile = null) {
     if (fileOperationInProgress) return;
@@ -9445,13 +9787,25 @@ function displayFiles(files, path, highlightFile = null) {
         `;
     }
     
-    // Sort files - directories first, then by name
+    // Apply search filter (only to files, not directories)
+    if (currentFileSearch) {
+        files = files.filter(f => f.is_directory || f.name.toLowerCase().includes(currentFileSearch));
+    }
+
+    if (files.length === 0 && currentFileSearch) {
+        fileList.innerHTML = `<p class="text-gray-400 p-4">No files match "<span class="text-white">${escapeHtml(currentFileSearch)}</span>"</p>`;
+        return false;
+    }
+
+    // Sort: directories always first, then apply chosen sort within each group
     files.sort((a, b) => {
         if (a.is_directory && !b.is_directory) return -1;
         if (!a.is_directory && b.is_directory) return 1;
+        if (currentFileSort === 'date') return (b.modified || 0) - (a.modified || 0);
+        if (currentFileSort === 'size') return (b.size || 0) - (a.size || 0);
         return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     });
-    
+
     files.forEach(file => {
         const icon = file.is_directory ? 
             `<svg class="w-5 h-5 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -9467,7 +9821,7 @@ function displayFiles(files, path, highlightFile = null) {
         
         html += `
             <div class="flex items-center justify-between p-3 hover:bg-slate-700 rounded-lg transition-colors" data-file-key="${fileKey}">
-                <div class="flex items-center cursor-pointer flex-1" onclick="${file.is_directory ? `loadFiles('${file.path}')` : ''}">
+                <div class="flex items-center cursor-pointer flex-1" onclick="${file.is_directory ? `loadFiles('${file.path}')` : `previewFile('${file.path}')`}">
                     ${icon}
                     <div class="flex-1">
                         <div class="font-medium">${file.name}</div>
@@ -9562,6 +9916,86 @@ function downloadFile(filePath) {
     
     showFileSuccess(`Downloading ${filePath.split('/').pop()}`);
 }
+
+// ── File Preview ────────────────────────────────────────────────
+function previewFile(filePath) {
+    const modal = document.getElementById('file-preview-modal');
+    const content = document.getElementById('preview-content');
+    const filename = document.getElementById('preview-filename');
+    const truncBadge = document.getElementById('preview-truncated-badge');
+    const dlBtn = document.getElementById('preview-download-btn');
+    if (!modal) return;
+
+    const name = filePath.split('/').pop();
+    filename.textContent = name;
+    truncBadge.classList.add('hidden');
+    content.innerHTML = `<div class="text-center text-gray-400 py-12">
+        <svg class="w-8 h-8 inline animate-spin mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+        <p>Loading preview...</p>
+    </div>`;
+
+    dlBtn.onclick = () => downloadFile(filePath);
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    networkAwareFetch(`/api/files/preview?path=${encodeURIComponent(filePath)}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                content.innerHTML = `<p class="text-red-400 p-4">${escapeHtml(data.error)}</p>`;
+                return;
+            }
+            if (data.type === 'image') {
+                content.innerHTML = `<div class="flex items-center justify-center h-full p-4">
+                    <img src="data:${data.mime};base64,${data.data}" alt="${escapeHtml(name)}" class="max-w-full max-h-full object-contain rounded">
+                </div>`;
+            } else if (data.type === 'text') {
+                if (data.truncated) truncBadge.classList.remove('hidden');
+                const isCSV = name.toLowerCase().endsWith('.csv');
+                if (isCSV) {
+                    // Render CSV as table
+                    const lines = data.content.split('\n').filter(l => l.trim());
+                    if (lines.length > 0) {
+                        const headers = lines[0].split(',');
+                        const rows = lines.slice(1);
+                        content.innerHTML = `<div class="overflow-auto"><table class="w-full text-xs border-collapse">
+                            <thead><tr>${headers.map(h => `<th class="border border-slate-600 px-2 py-1 bg-slate-800 text-left">${escapeHtml(h.trim())}</th>`).join('')}</tr></thead>
+                            <tbody>${rows.map(r => `<tr class="hover:bg-slate-800">${r.split(',').map(c => `<td class="border border-slate-700 px-2 py-1 font-mono">${escapeHtml(c.trim())}</td>`).join('')}</tr>`).join('')}</tbody>
+                        </table></div>`;
+                    }
+                } else {
+                    content.innerHTML = `<pre class="text-xs text-gray-300 font-mono whitespace-pre-wrap break-words leading-relaxed">${escapeHtml(data.content)}</pre>`;
+                }
+            } else if (data.type === 'too_large') {
+                content.innerHTML = `<div class="text-center text-gray-400 py-12">
+                    <p class="mb-3">File is too large to preview (${formatBytes(data.size)})</p>
+                    <button onclick="downloadFile('${filePath}')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">Download Instead</button>
+                </div>`;
+            } else {
+                content.innerHTML = `<div class="text-center text-gray-400 py-12">
+                    <p class="mb-1">Cannot preview this file type (${escapeHtml(data.mime || 'unknown')})</p>
+                    <p class="text-sm mb-3">Size: ${formatBytes(data.size)}</p>
+                    <button onclick="downloadFile('${filePath}')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">Download</button>
+                </div>`;
+            }
+        })
+        .catch(err => {
+            content.innerHTML = `<p class="text-red-400 p-4">Failed to load preview: ${escapeHtml(err.message)}</p>`;
+        });
+}
+
+function closeFilePreview() {
+    const modal = document.getElementById('file-preview-modal');
+    if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+}
+
+// Close preview on backdrop click or Escape key
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFilePreview(); });
+document.getElementById('file-preview-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeFilePreview();
+});
 
 function deleteFile(filePath) {
     if (fileOperationInProgress) return;
@@ -10494,6 +10928,11 @@ window.exploitVulnerability = exploitVulnerability;
 window.triggerDeepScan = triggerDeepScan;
 window.handleCustomDeepScanRequest = handleCustomDeepScanRequest;
 window.testDeepScan = testDeepScan;
+
+// Host Detail Panel Functions
+window.openHostPanel = openHostPanel;
+window.closeHostPanel = closeHostPanel;
+window.renderHostPanel = renderHostPanel;
 
 // Debug Functions
 window.debugDeepScanStates = function() {
@@ -13515,6 +13954,25 @@ function downloadZapReport(format = 'html') {
 
 function downloadScanReport(scanId) {
     window.open(`/api/vuln-advanced/scan/${scanId}/report?format=html`, '_blank');
+}
+
+async function exportScanReport() {
+    const btn = document.getElementById('export-report-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+    try {
+        const url = resolveNetworkAwareEndpoint('/api/report/export');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        addConsoleMessage('Report download started', 'success');
+    } catch(err) {
+        addConsoleMessage('Report export failed: ' + err.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-4-4m4 4l4-4m6 4H6"></path></svg>Export Report'; }
+    }
 }
 
 async function cancelAdvScan(scanId) {

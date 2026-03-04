@@ -170,32 +170,53 @@ class SharedData:
         self.initialize_variables() # Initialize the variables used by the application
         self.load_gamification_data()  # Load persistent gamification progress
 
-        # Initialize network intelligence (after paths and config are ready)
+        # Initialize network intelligence and AI service in background
+        # to avoid blocking startup (these are not needed immediately)
         self.network_intelligence = None
-        if not self._pager_mode:
-            self.initialize_network_intelligence()
         self.threat_intelligence = None  # type: ignore
-
-        # Initialize AI service (after paths and config are ready)
         self.ai_service = None
-        if not self._pager_mode:
-            self.initialize_ai_service()
-
-        # Initialize counters for dashboard
-        if not self._pager_mode:
-            self.scanned_networks_count = self._calculate_scanned_networks_count()
-        else:
-            self.scanned_networks_count = 0
+        self.scanned_networks_count = 0
+        self._deferred_init_done = threading.Event()
 
         self.create_livestatusfile()
-        self.load_fonts() # Load the fonts used by the application
-        self.load_images() # Load the images used by the application
-        # self.create_initial_image() # Create the initial image displayed on the screen
+
+        # Defer heavy I/O (fonts, images, AI, network intelligence) to a
+        # background thread so the main thread can continue to start the
+        # display and web server sooner.
+        if not self._pager_mode:
+            threading.Thread(target=self._deferred_init, daemon=True).start()
+        else:
+            # Pager mode: load fonts/images synchronously (lightweight)
+            self.load_fonts()
+            self.load_images()
+            self._deferred_init_done.set()
 
         # Start background cleanup task for old hosts (needs DB)
         if not self._pager_mode and self.db is not None:
             self._start_cleanup_task()
         
+    def _deferred_init(self):
+        """Run heavy initialization tasks in a background thread.
+
+        Loads fonts, images, network intelligence, AI service, and
+        network counts without blocking the main startup path.
+        """
+        try:
+            self.load_fonts()
+            self.load_images()
+            self.initialize_network_intelligence()
+            self.initialize_ai_service()
+            self.scanned_networks_count = self._calculate_scanned_networks_count()
+            logger.info("Deferred initialization completed")
+        except Exception as e:
+            logger.error(f"Deferred initialization error: {e}")
+        finally:
+            self._deferred_init_done.set()
+
+    def wait_for_deferred_init(self, timeout: float = 30.0) -> bool:
+        """Wait for deferred init to finish (used by display before first render)."""
+        return self._deferred_init_done.wait(timeout=timeout)
+
     def initialize_network_intelligence(self):
         """Initialize the network intelligence system"""
         try:
@@ -297,8 +318,10 @@ class SharedData:
         self.crackedpwddir = self._default_crackedpwddir
         self.datastolendir = self._default_datastolendir
         self.zombiesdir = os.path.join(self.output_dir, 'zombies')
-        self.vulnerabilities_dir = os.path.join(self.output_dir, 'vulnerabilities')
-        self.scan_results_dir = os.path.join(self.output_dir, "scan_results")
+        self._default_vulnerabilities_dir = os.path.join(self.output_dir, 'vulnerabilities')
+        self._default_scan_results_dir = os.path.join(self.output_dir, "scan_results")
+        self.vulnerabilities_dir = self._default_vulnerabilities_dir
+        self.scan_results_dir = self._default_scan_results_dir
         # Directories under resourcesdir
         self.picdir = os.path.join(self.resourcesdir, 'images')
         self.fontdir = os.path.join(self.resourcesdir, 'fonts')
@@ -319,7 +342,7 @@ class SharedData:
         self.livestatusfile = os.path.join(self.datadir, 'livestatus.csv')
         self.gamification_file = os.path.join(self.datadir, 'gamification.json')
         self.pwnagotchi_status_file = os.path.join(self.datadir, 'pwnagotchi_status.json')
-        # Files directly under vulnerabilities_dir
+        # Files directly under vulnerabilities_dir (kept in sync via _update_output_paths)
         self.vuln_summary_file = os.path.join(self.vulnerabilities_dir, 'vulnerability_summary.csv')
         self.vuln_scan_progress_file = os.path.join(self.vulnerabilities_dir, 'scan_progress.json')
         # Files directly under dictionarydir
@@ -344,6 +367,9 @@ class SharedData:
         loot_data_dir = context.get('data_stolen_dir') or self._default_datastolendir
         loot_credentials_dir = context.get('credentials_dir') or self._default_crackedpwddir
         self._update_loot_paths(loot_data_dir, loot_credentials_dir)
+        scan_results_dir = context.get('scan_results_dir') or self._default_scan_results_dir
+        vulnerabilities_dir = context.get('vulnerabilities_dir') or self._default_vulnerabilities_dir
+        self._update_output_paths(scan_results_dir, vulnerabilities_dir)
         if configure_db and hasattr(self, 'db'):
             self._configure_database()
 
@@ -391,6 +417,17 @@ class SharedData:
             self.crackedpwddir = credentials_dir
         self.crackedpwd_dir = self.crackedpwddir  # legacy attribute name used by web UI
         self._refresh_credential_files()
+
+    def _update_output_paths(self, scan_results_dir, vulnerabilities_dir):
+        """Switch scan result and vulnerability dirs to the active network's paths."""
+        if scan_results_dir:
+            os.makedirs(scan_results_dir, exist_ok=True)
+            self.scan_results_dir = scan_results_dir
+        if vulnerabilities_dir:
+            os.makedirs(vulnerabilities_dir, exist_ok=True)
+            self.vulnerabilities_dir = vulnerabilities_dir
+            self.vuln_summary_file = os.path.join(vulnerabilities_dir, 'vulnerability_summary.csv')
+            self.vuln_scan_progress_file = os.path.join(vulnerabilities_dir, 'scan_progress.json')
 
     def _refresh_credential_files(self):
         """Keep credential CSV paths aligned with the active credential directory."""
@@ -471,7 +508,7 @@ class SharedData:
             "log_critical": True,
             "terminal_log_level": "all",
             
-            "startup_delay": 10,
+            "startup_delay": 2,
             "web_delay": 2,
             "screen_delay": 1,
             "comment_delaymin": 15,
@@ -527,8 +564,8 @@ class SharedData:
             "wifi_monitor_enabled": True,
             "wifi_auto_ap_fallback": True,
             "wifi_ap_timeout": 180,
-            "wifi_multi_network_scans_enabled": False,
-            "wifi_multi_scan_mode": "single",
+            "wifi_multi_network_scans_enabled": True,
+            "wifi_multi_scan_mode": "multi",
             "wifi_multi_scan_focus_interface": "",
             "wifi_multi_scan_max_interfaces": 2,
             "wifi_multi_scan_max_parallel": 1,
@@ -673,7 +710,9 @@ class SharedData:
                     logger.warning(f"Could not generate actions.json: {e}")
             self._load_status_list_from_actions_json()
         else:
-            self.generate_actions_json()
+            # Skip costly re-import of every action module if actions.json
+            # is already up to date (same set of .py files in actions/).
+            self._generate_actions_json_if_needed()
         self.delete_webconsolelog()
         self.initialize_csv()
         self.initialize_epd_display()
@@ -754,7 +793,6 @@ class SharedData:
             return
         try:
             logger.info("Initializing EPD display...")
-            time.sleep(1)
             epd_type = self.config.get("epd_type", DEFAULT_EPD_TYPE)
 
             # Auto-detect if set to "auto" OR if still on factory default (user never ran installer with detection)
@@ -1053,6 +1091,34 @@ class SharedData:
         except Exception as e:
             logger.error(f"Unexpected error occurred while creating live status file: {e}")
 
+
+    def _generate_actions_json_if_needed(self):
+        """Only regenerate actions.json if the action modules have changed.
+
+        Compares the modification time of the actions directory against the
+        existing actions.json file.  If no .py file is newer, we skip the
+        expensive importlib.import_module() loop and just reload status_list.
+        """
+        try:
+            if os.path.exists(self.actions_file):
+                json_mtime = os.path.getmtime(self.actions_file)
+                # Check if any action .py file is newer than actions.json
+                needs_regen = False
+                for filename in os.listdir(self.actions_dir):
+                    if filename.endswith('.py') and filename != '__init__.py':
+                        py_path = os.path.join(self.actions_dir, filename)
+                        if os.path.getmtime(py_path) > json_mtime:
+                            needs_regen = True
+                            break
+                if not needs_regen:
+                    # actions.json is up to date — just load status_list from it
+                    self._load_status_list_from_actions_json()
+                    logger.info("actions.json is up to date — skipped regeneration")
+                    return
+        except Exception as e:
+            logger.debug(f"Actions freshness check failed, regenerating: {e}")
+        # Fall through: regenerate
+        self.generate_actions_json()
 
     def generate_actions_json(self):
         """Generate the actions JSON file, it will be used to store the actions configuration."""
