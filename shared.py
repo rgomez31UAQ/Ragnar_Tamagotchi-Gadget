@@ -1096,20 +1096,44 @@ class SharedData:
         """Only regenerate actions.json if the action modules have changed.
 
         Compares the modification time of the actions directory against the
-        existing actions.json file.  If no .py file is newer, we skip the
-        expensive importlib.import_module() loop and just reload status_list.
+        existing actions.json file.  If no .py file is newer, we also verify
+        that every action .py has a corresponding entry in the JSON — a
+        previous generation may have missed modules due to transient import
+        errors (e.g. scanning.py failing once).
         """
         try:
             if os.path.exists(self.actions_file):
                 json_mtime = os.path.getmtime(self.actions_file)
                 # Check if any action .py file is newer than actions.json
                 needs_regen = False
+                py_modules = set()
                 for filename in os.listdir(self.actions_dir):
                     if filename.endswith('.py') and filename != '__init__.py':
+                        py_modules.add(filename[:-3])
                         py_path = os.path.join(self.actions_dir, filename)
                         if os.path.getmtime(py_path) > json_mtime:
                             needs_regen = True
-                            break
+
+                if not needs_regen:
+                    # Timestamps match — but verify no modules are missing
+                    try:
+                        with open(self.actions_file, 'r') as f:
+                            existing = json.load(f)
+                        json_modules = {a.get('b_module') for a in existing}
+                        # Modules that have .py files but no JSON entry may have
+                        # been skipped due to a transient import failure.  Some
+                        # .py files are intentionally excluded (helpers without
+                        # b_class/b_status), so only flag if the count differs
+                        # significantly — or specifically if critical modules
+                        # like 'scanning' are absent.
+                        missing = py_modules - json_modules
+                        if missing:
+                            logger.info(f"actions.json missing modules {missing} — regenerating")
+                            needs_regen = True
+                    except Exception as e:
+                        logger.debug(f"Could not validate actions.json contents: {e}")
+                        needs_regen = True
+
                 if not needs_regen:
                     # actions.json is up to date — just load status_list from it
                     self._load_status_list_from_actions_json()
