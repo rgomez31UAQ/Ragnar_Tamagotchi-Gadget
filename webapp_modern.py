@@ -3612,12 +3612,73 @@ def get_network():
             return jsonify({'error': str(e)}), 500
 
 
+def _batch_ai_classify(nodes, indices, ai_service, labels, valid_types):
+    """Classify multiple low-confidence devices in a SINGLE GPT-5 Nano call.
+
+    Mutates nodes in-place for the given indices.
+    """
+    if not indices:
+        return
+
+    # Build a compact table for the prompt
+    lines = []
+    for idx in indices:
+        n = nodes[idx]
+        lines.append(
+            f"{idx}|{n.get('vendor','') or '?'}|{n.get('hostname','') or '?'}|"
+            f"{n.get('mac','') or '?'}|{','.join(n['ports'][:10]) or 'none'}"
+        )
+
+    valid_list = ", ".join(sorted(valid_types - {"ragnar", "unknown"}))
+
+    system = (
+        "You are a network device classifier. For each numbered line, reply with "
+        "ONLY the line number and device_type, one per line. "
+        f"Valid types: {valid_list}. "
+        "Format: NUMBER|TYPE\nExample: 0|smart_tv\nIf uncertain reply NUMBER|unknown"
+    )
+
+    user = (
+        "IDX|VENDOR|HOSTNAME|MAC|PORTS\n" + "\n".join(lines)
+    )
+
+    original_model = ai_service.model
+    try:
+        ai_service.model = "gpt-5-nano"
+        answer = ai_service._ask(system, user)
+    finally:
+        ai_service.model = original_model
+
+    if not answer:
+        return
+
+    # Parse response lines
+    for line in answer.strip().splitlines():
+        line = line.strip().strip('`')
+        if '|' not in line:
+            continue
+        parts = line.split('|', 1)
+        try:
+            idx = int(parts[0].strip())
+            dtype = parts[1].strip().lower().replace(' ', '_').strip('"\'.,')
+        except (ValueError, IndexError):
+            continue
+        if idx in indices and dtype in valid_types:
+            nodes[idx]['type'] = dtype
+            nodes[idx]['type_label'] = labels.get(dtype, 'Unknown')
+            nodes[idx]['confidence'] = 0.7
+
+
 @app.route('/api/network/topology')
 def get_network_topology():
     """Build a topology graph with gateway as center, device types classified, and links inferred."""
     with _network_context_from_request():
         try:
-            from device_classifier import classify_device, classify_device_ai, DEVICE_ICONS, DEVICE_TYPE_LABELS, DEVICE_TYPE_COLORS
+            import hashlib
+            from device_classifier import classify_device, classify_device_ai, DEVICE_ICONS, DEVICE_TYPE_LABELS, DEVICE_TYPE_COLORS, VALID_DEVICE_TYPES
+
+            # Client can explicitly request AI classification
+            use_ai = request.args.get('use_ai', '0') == '1'
 
             hosts = shared_data.db.get_all_hosts()
             gw = getattr(shared_data, 'gateway_info', {}) or {}
@@ -3625,6 +3686,11 @@ def get_network_topology():
             ragnar_ip = gw.get('ragnar_ip')
             subnet = gw.get('subnet')
             interface = gw.get('interface')
+
+            # Compute a lightweight fingerprint of the current host list
+            # so the client can detect network changes
+            _hash_parts = sorted(f"{h.get('ip','')}|{h.get('mac','')}|{h.get('ports','')}" for h in hosts)
+            network_hash = hashlib.md5('|'.join(_hash_parts).encode()).hexdigest()[:12]
 
             # If no gateway info yet, try to detect from netifaces directly
             if not gateway_ip:
@@ -3652,9 +3718,12 @@ def get_network_topology():
             except Exception:
                 pass
 
+            # ----------------------------------------------------------
+            # Phase 1: fast rule-based classification (no AI calls)
+            # ----------------------------------------------------------
             nodes = []
             node_ids = set()
-            potential_aps = []  # Devices that might be access points
+            low_confidence_indices = []  # indices of nodes needing AI help
 
             for host in hosts:
                 ip = host.get('ip', '')
@@ -3665,16 +3734,19 @@ def get_network_topology():
                 ports = [p.strip() for p in ports_str.split(',') if p.strip()] if ports_str else []
                 vendor = host.get('vendor', '') or ''
                 status = host.get('status', 'unknown')
+                hostname = host.get('hostname', '') or ''
+                mac = host.get('mac', '') or ''
 
+                # Rule-based + hostname classification (no AI yet)
                 classification = classify_device_ai(
                     vendor, ports,
-                    hostname=host.get('hostname', ''),
-                    mac=host.get('mac', ''),
-                    ai_service=getattr(shared_data, 'ai_service', None),
+                    hostname=hostname,
+                    mac=mac,
+                    ai_service=None,  # skip AI in phase 1
                     gateway_ip=gateway_ip, device_ip=ip,
                 )
 
-                # Risk scoring (same as existing)
+                # Risk scoring
                 port_count = len(ports)
                 has_creds = 5 if ip in cred_ips else 0
                 degraded = 3 if status == 'degraded' else 0
@@ -3683,8 +3755,8 @@ def get_network_topology():
                 node = {
                     'id': ip,
                     'ip': ip,
-                    'mac': host.get('mac', ''),
-                    'hostname': host.get('hostname', ''),
+                    'mac': mac,
+                    'hostname': hostname,
                     'vendor': vendor,
                     'type': classification['device_type'],
                     'type_label': classification['label'],
@@ -3699,9 +3771,41 @@ def get_network_topology():
                 nodes.append(node)
                 node_ids.add(ip)
 
-                # Track potential APs: devices with router-like ports that aren't the gateway
-                if classification['device_type'] in ('router', 'access_point') and ip != gateway_ip:
-                    potential_aps.append(node)
+                # Track low-confidence nodes for batch AI
+                if classification['confidence'] < 0.65 and not node['is_gateway']:
+                    low_confidence_indices.append(len(nodes) - 1)
+
+            # ----------------------------------------------------------
+            # Phase 2: batch AI classification (only when client requests it)
+            # ----------------------------------------------------------
+            ai_used = False
+            ai_service = getattr(shared_data, 'ai_service', None)
+            if use_ai and ai_service and low_confidence_indices and ai_service.ensure_ready():
+                # Check if we have cached AI results for this exact network state
+                _topo_ai_cache = getattr(shared_data, '_topo_ai_cache', {})
+                cached = _topo_ai_cache.get(network_hash)
+                if cached:
+                    # Apply cached classifications
+                    for idx, dtype, label in cached:
+                        if idx < len(nodes):
+                            nodes[idx]['type'] = dtype
+                            nodes[idx]['type_label'] = label
+                            nodes[idx]['confidence'] = 0.7
+                    ai_used = True
+                else:
+                    try:
+                        _batch_ai_classify(nodes, low_confidence_indices, ai_service, DEVICE_TYPE_LABELS, VALID_DEVICE_TYPES)
+                        # Store results in cache
+                        cache_entries = [(idx, nodes[idx]['type'], nodes[idx]['type_label']) for idx in low_confidence_indices]
+                        shared_data._topo_ai_cache = {network_hash: cache_entries}
+                        ai_used = True
+                    except Exception as e:
+                        logger.debug(f"Batch AI classification failed (non-fatal): {e}")
+
+            # ----------------------------------------------------------
+            # Phase 3: build topology links
+            # ----------------------------------------------------------
+            potential_aps = []  # Devices that extend the network
 
             # Ensure gateway is in node list even if not in hosts table
             if gateway_ip and gateway_ip not in node_ids:
@@ -3725,6 +3829,19 @@ def get_network_topology():
                 })
                 node_ids.add(gateway_ip)
 
+            # Identify network-extending devices (APs, extenders, secondary routers)
+            # Exclude SBCs, servers, Ragnar — they run services but don't extend the network
+            _NETWORK_EXTENDER_TYPES = {'access_point', 'extender', 'switch'}
+            for node in nodes:
+                if node['is_gateway'] or node['is_ragnar']:
+                    continue
+                if node['type'] in _NETWORK_EXTENDER_TYPES:
+                    potential_aps.append(node)
+                # Only treat a device as a secondary router if it has very high
+                # confidence (vendor-confirmed) AND is NOT an SBC
+                elif node['type'] == 'router' and node['confidence'] >= 0.8:
+                    potential_aps.append(node)
+
             # Build links — default: everything connects to gateway
             links = []
             ap_macs_prefix = {}
@@ -3740,9 +3857,10 @@ def get_network_topology():
                 target = gateway_ip or (nodes[0]['ip'] if nodes else None)
                 link_type = 'default'
 
-                # Check if this device should connect to an AP instead
+                # Check if this device should connect to an AP/extender instead
                 mac = node.get('mac', '')
-                if mac and len(mac) >= 8 and not node.get('type') in ('router', 'access_point'):
+                node_type = node.get('type', '')
+                if mac and len(mac) >= 8 and node_type not in ('router', 'access_point', 'extender', 'switch'):
                     prefix = mac[:8].lower()
                     if prefix in ap_macs_prefix and ap_macs_prefix[prefix] != node['ip']:
                         target = ap_macs_prefix[prefix]
@@ -3780,6 +3898,8 @@ def get_network_topology():
                 'device_icons': DEVICE_ICONS,
                 'device_labels': DEVICE_TYPE_LABELS,
                 'device_colors': DEVICE_TYPE_COLORS,
+                'network_hash': network_hash,
+                'ai_used': ai_used,
             }
             return jsonify(result)
 

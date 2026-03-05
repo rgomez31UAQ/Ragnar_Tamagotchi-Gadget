@@ -15226,6 +15226,10 @@ async function deleteTargetCredential(targetHost) {
 // ── Network Map (D3 force graph with topology API) ──────────────
 let _mapSimulation = null;
 let _mapInitialized = false;
+let _mapAiAvailable = false;   // AI service ready on server
+let _mapAiEnabled = false;     // user toggle state
+let _mapNetworkHash = null;    // last-known host fingerprint for change detection
+let _mapAiCacheValid = false;  // true when AI results are cached for current hash
 
 function riskColor(score) {
     if (score === 0) return '#64748b';
@@ -15250,19 +15254,76 @@ function _buildMapLegend(deviceColors, deviceLabels) {
     });
 }
 
+// ── AI toggle helpers ──
+async function _checkMapAiStatus() {
+    try {
+        const resp = await networkAwareFetch('/api/ai/status');
+        const data = await resp.json();
+        _mapAiAvailable = !!(data.enabled && data.configured);
+        const toggle = document.getElementById('map-ai-toggle');
+        if (toggle) {
+            toggle.disabled = !_mapAiAvailable;
+            if (!_mapAiAvailable) {
+                toggle.checked = false;
+                _mapAiEnabled = false;
+            }
+        }
+        // Grey out label when unavailable
+        const wrapper = document.getElementById('map-ai-toggle-wrapper');
+        if (wrapper) {
+            wrapper.title = _mapAiAvailable ? 'Use GPT-5 Nano to improve device classification' : 'AI not available – enable in Settings';
+        }
+    } catch { _mapAiAvailable = false; }
+}
+
+function onMapAiToggle(checked) {
+    _mapAiEnabled = checked && _mapAiAvailable;
+    if (_mapAiEnabled) {
+        // Force re-classify with AI on next load
+        _mapAiCacheValid = false;
+        refreshNetworkMap();
+    }
+}
+
+function _showMapAiSpinner(show) {
+    const el = document.getElementById('map-ai-spinner');
+    if (el) el.classList.toggle('hidden', !show);
+}
+
 async function loadNetworkMap() {
     if (typeof d3 === 'undefined') {
         document.getElementById('network-map-loading').innerHTML = '<p class="text-red-400">D3.js failed to load. Check your internet connection.</p>';
         return;
     }
 
+    // Check AI availability on first load
+    if (!_mapInitialized) await _checkMapAiStatus();
+
     document.getElementById('network-map-loading').style.display = 'flex';
     document.getElementById('network-map-svg').style.display = 'none';
 
+    // Determine whether to ask the server for AI classification
+    const wantAi = _mapAiEnabled && _mapAiAvailable;
+    const useAiParam = wantAi && !_mapAiCacheValid ? '1' : '0';
+    if (wantAi) _showMapAiSpinner(true);
+
     try {
-        const resp = await networkAwareFetch('/api/network/topology');
+        const resp = await networkAwareFetch(`/api/network/topology?use_ai=${useAiParam}`);
         const topo = await resp.json();
         if (topo.error) throw new Error(topo.error);
+
+        // Track network hash for change detection
+        if (topo.network_hash) {
+            if (_mapNetworkHash && _mapNetworkHash !== topo.network_hash) {
+                // Network changed — invalidate AI cache so next refresh re-runs AI
+                _mapAiCacheValid = false;
+            }
+            if (topo.ai_used) {
+                // Server ran AI for this response — mark cache valid
+                _mapAiCacheValid = true;
+            }
+            _mapNetworkHash = topo.network_hash;
+        }
 
         // Build legend
         _buildMapLegend(topo.device_colors || {}, topo.device_labels || {});
@@ -15294,6 +15355,8 @@ async function loadNetworkMap() {
         renderNetworkMap(nodes, links, topo.device_colors || {}, topo.device_icons || {});
     } catch(err) {
         document.getElementById('network-map-loading').innerHTML = `<p class="text-red-400">Error loading map: ${escapeHtml(err.message)}</p>`;
+    } finally {
+        _showMapAiSpinner(false);
     }
 }
 
@@ -15509,3 +15572,4 @@ window.editTargetCredential = editTargetCredential;
 window.deleteTargetCredential = deleteTargetCredential;
 window.loadNetworkMap = loadNetworkMap;
 window.refreshNetworkMap = refreshNetworkMap;
+window.onMapAiToggle = onMapAiToggle;

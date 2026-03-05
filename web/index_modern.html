@@ -857,19 +857,34 @@
         <!-- Network Map Tab -->
         <div id="network-map-tab" class="tab-content hidden">
             <div class="glass rounded-xl p-6">
-                <div class="flex items-center justify-between mb-4">
+                <!-- Header row: title left, controls right -->
+                <div class="flex items-center justify-between mb-3">
                     <div>
                         <h2 class="text-2xl font-bold">Network Map</h2>
                         <p class="text-sm text-gray-400">Interactive topology map with device classification</p>
                     </div>
-                    <div class="flex items-center gap-4">
-                        <!-- Device type legend (populated by JS) -->
-                        <div id="map-legend" class="flex flex-wrap items-center gap-3 text-xs text-gray-400"></div>
-                        <button onclick="refreshNetworkMap()" class="bg-Ragnar-600 hover:bg-Ragnar-700 text-white px-4 py-2 rounded-lg transition-colors text-sm">
+                    <div class="flex items-center gap-3 shrink-0">
+                        <!-- AI toggle -->
+                        <div id="map-ai-toggle-wrapper" class="flex items-center gap-2">
+                            <span class="text-xs text-gray-400 whitespace-nowrap">AI Classify</span>
+                            <!-- Spinner shown during AI work -->
+                            <svg id="map-ai-spinner" class="hidden animate-spin h-4 w-4 text-Ragnar-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="map-ai-toggle" class="sr-only peer" onchange="onMapAiToggle(this.checked)">
+                                <div class="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-gray-300 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-Ragnar-600 peer-disabled:opacity-40 peer-disabled:cursor-not-allowed"></div>
+                            </label>
+                        </div>
+                        <!-- Refresh button -->
+                        <button onclick="refreshNetworkMap()" class="bg-Ragnar-600 hover:bg-Ragnar-700 text-white px-4 py-2 rounded-lg transition-colors text-sm whitespace-nowrap shrink-0">
                             Refresh
                         </button>
                     </div>
                 </div>
+                <!-- Device type legend (own row beneath header) -->
+                <div id="map-legend" class="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3"></div>
                 <!-- Tooltip -->
                 <div id="map-tooltip" class="absolute z-50 bg-slate-800 border border-slate-600 rounded-lg p-3 text-sm pointer-events-none hidden max-w-xs"></div>
                 <!-- SVG canvas -->

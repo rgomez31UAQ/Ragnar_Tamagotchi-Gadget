@@ -176,13 +176,7 @@ def _classify_by_ports(ports):
         except (ValueError, IndexError):
             continue
 
-    # Router: serves DNS + HTTP (typical home router)
-    if 53 in port_set and (80 in port_set or 443 in port_set):
-        return "router"
-    # DHCP server → router
-    if 67 in port_set:
-        return "router"
-    # Printer protocols
+    # Printer protocols (very specific, check first)
     if 9100 in port_set or 631 in port_set or 515 in port_set:
         return "printer"
     # RTSP → IP camera
@@ -203,13 +197,20 @@ def _classify_by_ports(ports):
     # NAS protocols (AFP + SMB or NFS)
     if 548 in port_set or (2049 in port_set and 445 in port_set):
         return "nas"
-    # SMB + SSH → NAS (not workstation)
+    # SMB + SSH + Synology/QNAP web port → NAS
     if 445 in port_set and 22 in port_set and 5000 in port_set:
         return "nas"
+    # DHCP server → router (only if also serving DNS — real routers do both)
+    if 67 in port_set and 53 in port_set:
+        return "router"
+    # Router: serves DNS + HTTP (typical home router)
+    # BUT only if there are few ports — SBCs/servers running pi-hole also have 53+80
+    if 53 in port_set and (80 in port_set or 443 in port_set) and len(port_set) <= 4:
+        return "router"
     # RDP → Windows workstation
     if 3389 in port_set:
         return "workstation"
-    # SMB/CIFS without other indicators → workstation
+    # SMB/CIFS without SSH → workstation
     if 445 in port_set and 22 not in port_set:
         return "workstation"
     # MQTT → IoT hub
@@ -369,6 +370,10 @@ def classify_device(vendor, ports, gateway_ip=None, device_ip=None):
         elif device_type == "workstation" and port_type == "server":
             device_type = "server"
             confidence = 0.7
+        elif device_type == "sbc" and port_type == "router":
+            # SBCs running pi-hole / DNS look like routers but aren't —
+            # keep the SBC classification
+            pass
         elif device_type == port_type:
             confidence = 0.9  # vendor + ports agree
 
@@ -412,36 +417,55 @@ def classify_device_ai(vendor, ports, hostname, mac, ai_service=None,
     result = classify_device(vendor, ports, gateway_ip=gateway_ip, device_ip=device_ip)
     result["ai_enhanced"] = False
 
-    # Step 2: try hostname-based refinement for common patterns
-    if hostname and result["confidence"] < 0.8:
+    # Step 2: hostname-based refinement
+    # Strong hostname hints override even high-confidence vendor matches because
+    # hostnames are user-visible names that are very specific (e.g. "RE200" is
+    # always a TP-Link extender even though TP-Link vendor → router).
+    if hostname:
         hostname_lower = hostname.lower()
-        _HOSTNAME_HINTS = {
-            "cam": "camera", "ipcam": "camera", "dvr": "camera", "nvr": "camera",
-            "tv": "smart_tv", "appletv": "smart_tv", "firetv": "smart_tv",
-            "chromecast": "smart_tv", "roku": "smart_tv",
-            "echo": "speaker", "nest-audio": "speaker", "nest-mini": "speaker",
-            "homepod": "speaker", "sonos": "speaker", "google-home": "speaker",
-            "doorbell": "doorbell",
-            "thermostat": "thermostat", "ecobee": "thermostat", "tado": "thermostat",
-            "iphone": "phone", "android": "phone", "galaxy": "phone", "pixel": "phone",
-            "ipad": "tablet", "tab": "tablet", "kindle": "tablet",
-            "macbook": "laptop", "thinkpad": "laptop", "laptop": "laptop",
-            "xbox": "gaming", "playstation": "gaming", "ps5": "gaming",
-            "nintendo": "gaming", "switch": "gaming",
-            "raspberry": "sbc", "raspberrypi": "sbc", "pi-hole": "sbc",
-            "printer": "printer", "epson": "printer", "brother": "printer",
-            "bosch-wat": "appliance", "bosch-wt": "appliance",
-            "roomba": "appliance", "roborock": "appliance",
-            "tesla": "vehicle", "wallbox": "vehicle", "chargepoint": "vehicle",
+        # Priority hostname hints — these ALWAYS override (even at confidence 0.8+)
+        # because the hostname is more specific than a broad vendor match.
+        _STRONG_HOSTNAME_HINTS = {
             "re200": "extender", "re300": "extender", "re450": "extender",
-            "range-ext": "extender", "repeater": "extender",
+            "re505x": "extender", "re605x": "extender", "re650": "extender",
+            "range-ext": "extender", "repeater": "extender", "ty_wr": "extender",
+            "raspberry": "sbc", "raspberrypi": "sbc", "pi-hole": "sbc",
+            "nest-audio": "speaker", "nest-mini": "speaker", "nest-hub": "speaker",
+            "google-home": "speaker", "homepod": "speaker",
+            "bosch-wat": "appliance", "bosch-wt": "appliance",
+            "appletv": "smart_tv", "edvinsappletv": "smart_tv",
         }
-        for hint, dtype in _HOSTNAME_HINTS.items():
+        for hint, dtype in _STRONG_HOSTNAME_HINTS.items():
             if hint in hostname_lower:
                 result["device_type"] = dtype
                 result["label"] = DEVICE_TYPE_LABELS.get(dtype, "Unknown")
-                result["confidence"] = 0.75
-                break
+                result["confidence"] = 0.85  # hostname is strong signal
+                return result  # short circuit — hostname is definitive
+
+        # Weaker hostname hints — only fire when vendor was inconclusive
+        if result["confidence"] < 0.8:
+            _HOSTNAME_HINTS = {
+                "cam": "camera", "ipcam": "camera", "dvr": "camera", "nvr": "camera",
+                "tv": "smart_tv", "firetv": "smart_tv",
+                "chromecast": "smart_tv", "roku": "smart_tv",
+                "echo": "speaker", "sonos": "speaker",
+                "doorbell": "doorbell",
+                "thermostat": "thermostat", "ecobee": "thermostat", "tado": "thermostat",
+                "iphone": "phone", "android": "phone", "galaxy": "phone", "pixel": "phone",
+                "ipad": "tablet", "tab": "tablet", "kindle": "tablet",
+                "macbook": "laptop", "thinkpad": "laptop", "laptop": "laptop",
+                "xbox": "gaming", "playstation": "gaming", "ps5": "gaming",
+                "nintendo": "gaming",
+                "printer": "printer", "epson": "printer", "brother": "printer",
+                "roomba": "appliance", "roborock": "appliance",
+                "tesla": "vehicle", "wallbox": "vehicle", "chargepoint": "vehicle",
+            }
+            for hint, dtype in _HOSTNAME_HINTS.items():
+                if hint in hostname_lower:
+                    result["device_type"] = dtype
+                    result["label"] = DEVICE_TYPE_LABELS.get(dtype, "Unknown")
+                    result["confidence"] = 0.75
+                    break
 
     # Step 3: AI-enhanced classification if still low confidence
     AI_CONFIDENCE_THRESHOLD = 0.65
