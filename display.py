@@ -730,23 +730,28 @@ class Display:
         """Draw standard page frame: border, title, divider, footer."""
         w = self.shared_data.width
         h = self.shared_data.height
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
         font_title = self.shared_data.font_viking
         draw.rectangle((1, 1, w - 1, h - 1), outline=0)
-        draw.text((4, 4), title, font=font_title, fill=0)
-        draw.line((1, 22, w - 1, 22), fill=0)
-        draw.line((1, h - 18, w - 1, h - 18), fill=0)
-        draw.text((4, h - 16), "K1:Home K2:Flip K3:Next K4:Rst", font=font, fill=0)
+        draw.text((int(4 * sx), int(4 * sy)), title, font=font_title, fill=0)
+        draw.line((1, int(22 * sy), w - 1, int(22 * sy)), fill=0)
+        draw.line((1, h - int(18 * sy), w - 1, h - int(18 * sy)), fill=0)
+        draw.text((int(4 * sx), h - int(16 * sy)), "K1:Home K2:Flip K3:Next K4:Rst", font=font, fill=0)
 
     def _draw_stat_rows(self, draw, y, stats):
         """Draw key-value stat rows. Returns final y position."""
         w = self.shared_data.width
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
-        line_h = 14
+        line_h = int(14 * sy)
+        pad_x = int(6 * sx)
         for label, value in stats:
             val_str = str(value)[:22]
-            draw.text((6, y), label, font=font, fill=0)
-            draw.text((w - 6 - font.getlength(val_str), y), val_str, font=font, fill=0)
+            draw.text((pad_x, y), label, font=font, fill=0)
+            draw.text((w - pad_x - font.getlength(val_str), y), val_str, font=font, fill=0)
             y += line_h
         return y
 
@@ -904,10 +909,14 @@ class Display:
         self._draw_page_frame(draw, "NETWORK SCAN")
         w = self.shared_data.width
         h = self.shared_data.height
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
         sd = self.shared_data
-        y = 28
-        line_h = 14
+        y = int(28 * sy)
+        line_h = int(14 * sy)
+        pad_x = int(6 * sx)
+        row_h = int(12 * sy)
 
         data = self._get_cached_page_data('network', self._fetch_network_data)
 
@@ -921,13 +930,13 @@ class Display:
             y = self._draw_stat_rows(draw, y, stats)
 
             # Divider before host list
-            y += 2
-            draw.line((4, y, w - 4, y), fill=0)
-            y += 4
+            y += int(2 * sy)
+            draw.line((int(4 * sx), y, w - int(4 * sx), y), fill=0)
+            y += int(4 * sy)
 
             # List actual discovered hosts
             hosts = data.get('hosts', [])
-            max_rows = (h - 18 - y) // 12
+            max_rows = (h - int(18 * sy) - y) // row_h
             for host in hosts[:max_rows]:
                 ip = host.get('ip', '?')
                 status = host.get('status', '?')
@@ -935,9 +944,9 @@ class Display:
                 port_count = len([p for p in str(ports).split(';') if p.strip()]) if ports else 0
                 line = f"{ip}"
                 extra = f"{status[:3]} p:{port_count}"
-                draw.text((6, y), line, font=font, fill=0)
-                draw.text((w - 6 - font.getlength(extra), y), extra, font=font, fill=0)
-                y += 12
+                draw.text((pad_x, y), line, font=font, fill=0)
+                draw.text((w - pad_x - font.getlength(extra), y), extra, font=font, fill=0)
+                y += row_h
         else:
             stats = [
                 ("Hosts found", str(getattr(sd, 'targetnbr', 0))),
@@ -953,10 +962,13 @@ class Display:
         self._draw_page_frame(draw, "VULN INTEL")
         w = self.shared_data.width
         h = self.shared_data.height
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
         sd = self.shared_data
-        y = 28
-        line_h = 14
+        y = int(28 * sy)
+        row_h = int(12 * sy)
+        pad_x = int(6 * sx)
 
         data = self._get_cached_page_data('vuln_intel', self._fetch_vuln_intel_data, ttl=30)
 
@@ -973,15 +985,15 @@ class Display:
             # Show recent scan targets
             targets = data.get('targets', [])
             if targets:
-                y += 2
-                draw.line((4, y, w - 4, y), fill=0)
-                y += 4
-                draw.text((6, y), "Recent targets:", font=font, fill=0)
-                y += 12
-                max_rows = (h - 18 - y) // 12
+                y += int(2 * sy)
+                draw.line((int(4 * sx), y, w - int(4 * sx), y), fill=0)
+                y += int(4 * sy)
+                draw.text((pad_x, y), "Recent targets:", font=font, fill=0)
+                y += row_h
+                max_rows = (h - int(18 * sy) - y) // row_h
                 for ip in targets[:max_rows]:
-                    draw.text((10, y), ip, font=font, fill=0)
-                    y += 12
+                    draw.text((int(10 * sx), y), ip, font=font, fill=0)
+                    y += row_h
         else:
             stats = [
                 ("Vulns found", str(getattr(sd, 'vulnnbr', 0))),
@@ -996,8 +1008,10 @@ class Display:
         self._draw_page_frame(draw, "DISCOVERED")
         w = self.shared_data.width
         h = self.shared_data.height
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
-        y = 28
+        y = int(28 * sy)
 
         data = self._get_cached_page_data('discovered', self._fetch_discovered_data, ttl=15)
 
@@ -1012,9 +1026,9 @@ class Display:
                 ("SQL creds", str(creds.get('SQL', 0))),
             ]
             y = self._draw_stat_rows(draw, y, stats)
-            y += 2
-            draw.line((4, y, w - 4, y), fill=0)
-            y += 4
+            y += int(2 * sy)
+            draw.line((int(4 * sx), y, w - int(4 * sx), y), fill=0)
+            y += int(4 * sy)
             summary = [
                 ("Data stolen", f"{data['loot']} files"),
                 ("Attack logs", str(data['attacks'])),
@@ -1034,8 +1048,13 @@ class Display:
         self._draw_page_frame(draw, "ADV SCANNER")
         w = self.shared_data.width
         h = self.shared_data.height
+        sx = self.scale_factor_x
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
-        y = 28
+        y = int(28 * sy)
+        line_h = int(14 * sy)
+        row_h = int(12 * sy)
+        pad_x = int(6 * sx)
 
         data = self._get_cached_page_data('advanced', self._fetch_advanced_data, ttl=5)
 
@@ -1056,19 +1075,19 @@ class Display:
                 scanner_items.append((name.capitalize(), status))
 
             for label, value in scanner_items:
-                draw.text((6, y), label, font=font, fill=0)
-                draw.text((w - 6 - font.getlength(value), y), value, font=font, fill=0)
-                y += 14
+                draw.text((pad_x, y), label, font=font, fill=0)
+                draw.text((w - pad_x - font.getlength(value), y), value, font=font, fill=0)
+                y += line_h
 
-            y += 2
-            draw.line((4, y, w - 4, y), fill=0)
-            y += 4
+            y += int(2 * sy)
+            draw.line((int(4 * sx), y, w - int(4 * sx), y), fill=0)
+            y += int(4 * sy)
 
             # Findings summary
             total = summary.get('total_findings', 0)
-            draw.text((6, y), "Findings", font=font, fill=0)
-            draw.text((w - 6 - font.getlength(str(total)), y), str(total), font=font, fill=0)
-            y += 14
+            draw.text((pad_x, y), "Findings", font=font, fill=0)
+            draw.text((w - pad_x - font.getlength(str(total)), y), str(total), font=font, fill=0)
+            y += line_h
 
             # Severity breakdown on one line each
             crit = sev.get('critical', 0)
@@ -1076,23 +1095,23 @@ class Display:
             med = sev.get('medium', 0)
             low = sev.get('low', 0)
             sev_line = f"C:{crit} H:{high} M:{med} L:{low}"
-            draw.text((6, y), sev_line, font=font, fill=0)
-            y += 14
+            draw.text((pad_x, y), sev_line, font=font, fill=0)
+            y += line_h
 
             # Active scans
             active_count = len([s for s in active if s.get('status') == 'running'])
-            draw.text((6, y), "Active scans", font=font, fill=0)
-            draw.text((w - 6 - font.getlength(str(active_count)), y), str(active_count), font=font, fill=0)
-            y += 14
+            draw.text((pad_x, y), "Active scans", font=font, fill=0)
+            draw.text((w - pad_x - font.getlength(str(active_count)), y), str(active_count), font=font, fill=0)
+            y += line_h
 
             # Show running scan details
             for scan in active:
-                if scan.get('status') == 'running' and y < h - 32:
+                if scan.get('status') == 'running' and y < h - int(32 * sy):
                     stype = scan.get('scan_type', '?')[:8]
                     progress = scan.get('progress_percent', 0)
                     line = f"{stype} {progress}%"
-                    draw.text((10, y), line, font=font, fill=0)
-                    y += 12
+                    draw.text((int(10 * sx), y), line, font=font, fill=0)
+                    y += row_h
         else:
             stats = [
                 ("Scanner", "Not available"),
@@ -1106,8 +1125,9 @@ class Display:
         self._draw_page_frame(draw, "TRAFFIC")
         w = self.shared_data.width
         h = self.shared_data.height
+        sy = self.scale_factor_y
         font = self.shared_data.font_arial9
-        y = 28
+        y = int(28 * sy)
 
         data = self._get_cached_page_data('traffic', self._fetch_traffic_data, ttl=3)
 
