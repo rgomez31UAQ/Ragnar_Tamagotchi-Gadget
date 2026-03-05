@@ -1084,7 +1084,8 @@ def _execute_pwn_mode_switch(target_mode: str) -> None:
                  'systemctl stop ragnar.service'
                  ' && python3 -OO /home/ragnar/Ragnar/wipe_epd.py 2>/dev/null; true'
                  ' && systemctl start bettercap.service'
-                 ' && systemctl start pwnagotchi.service'],
+                 ' && systemctl start pwnagotchi.service'
+                 ' && systemctl start ragnar-swap-button.service'],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

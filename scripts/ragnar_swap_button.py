@@ -49,6 +49,7 @@ def swap_to_ragnar():
              'bash', '-c',
              'sleep 1 && systemctl stop pwnagotchi.service'
              ' && systemctl stop bettercap.service'
+             ' && systemctl stop ragnar-swap-button.service'
              ' && sleep 2'
              ' && systemctl start ragnar.service'],
             stdout=subprocess.DEVNULL,

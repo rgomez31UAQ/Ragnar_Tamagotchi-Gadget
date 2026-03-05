@@ -250,6 +250,12 @@ if __name__ == "__main__":
         logger.info("Loading shared data config...")
         shared_data.load_config()
 
+        # Always reset pwnagotchi_mode on Ragnar startup so Ragnar
+        # is the canonical mode after every boot / service restart.
+        shared_data.config['pwnagotchi_mode'] = 'ragnar'
+        shared_data.config['pwnagotchi_last_status'] = 'Ragnar service is running'
+        shared_data.save_config()
+
         # Clean up leftover pwnagotchi state (mon0, services)
         # Run all cleanup commands in parallel to avoid sequential timeouts
         logger.info("Cleaning up leftover pwnagotchi state...")
@@ -258,6 +264,7 @@ if __name__ == "__main__":
             (['iw', 'mon0', 'del'], 5),
             (['systemctl', 'stop', 'pwnagotchi'], 10),
             (['systemctl', 'stop', 'bettercap'], 10),
+            (['systemctl', 'stop', 'ragnar-swap-button'], 5),
         ]
         cleanup_procs = []
         for cmd, _ in cleanup_cmds:

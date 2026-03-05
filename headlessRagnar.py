@@ -221,6 +221,18 @@ if __name__ == "__main__":
         logger.info("Loading shared data config...")
         shared_data.load_config()
 
+        # Always reset pwnagotchi_mode on Ragnar startup so Ragnar
+        # is the canonical mode after every boot / service restart.
+        shared_data.config['pwnagotchi_mode'] = 'ragnar'
+        shared_data.config['pwnagotchi_last_status'] = 'Ragnar service is running'
+        shared_data.save_config()
+
+        # Stop the swap-button listener if it was left running
+        subprocess.Popen(
+            ['systemctl', 'stop', 'ragnar-swap-button'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
         # Start Ragnar core logic
         logger.info("Starting Ragnar thread...")
         ragnar = Ragnar(shared_data)
