@@ -494,6 +494,8 @@ def classify_device_ai(vendor, ports, hostname, mac, ai_service=None,
             "rt-ax": "router", "rt-ac": "router", "rt-n": "router",
             "gt-ax": "router", "gt-ac": "router",
             "zenwifi": "router", "asus router": "router",
+            # Ragnar devices
+            "ragnar": "ragnar",
         }
         for hint, dtype in _STRONG_HOSTNAME_HINTS.items():
             if hint in hostname_lower:

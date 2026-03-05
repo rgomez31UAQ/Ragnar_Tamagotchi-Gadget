@@ -3110,6 +3110,84 @@ def manage_scan_subnets():
         logger.error(f"Error managing scan subnets: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/config/scan-subnets/trigger', methods=['POST'])
+def trigger_subnet_scan():
+    """Trigger an immediate nmap scan of a specific subnet in the background.
+
+    Body: {"cidr": "10.0.0.0/24"}
+    Returns immediately — results appear in the subnet scan log.
+    """
+    import ipaddress as _ip
+    try:
+        data = request.get_json() or {}
+        raw = str(data.get('cidr', '')).strip()
+        if not raw:
+            return jsonify({'error': 'Missing cidr field'}), 400
+        try:
+            net = _ip.ip_network(raw, strict=False)
+            normalised = str(net)
+        except ValueError:
+            return jsonify({'error': f'Invalid CIDR: {raw}'}), 400
+
+        def _bg_scan(cidr):
+            try:
+                from actions.scanning import NetworkScanner
+                scanner = NetworkScanner(shared_data)
+                portstart = shared_data.portstart
+                portend = shared_data.portend
+                extra_ports = shared_data.portlist
+
+                shared_data.append_subnet_scan_log(
+                    cidr, 'info', f'Scanning {cidr}\u2026',
+                )
+                results = scanner.run_nmap_network_scan(
+                    cidr, portstart, portend, extra_ports,
+                )
+                found = len(results)
+                # Persist discovered hosts into DB
+                for host, host_data in results.items():
+                    mac = host_data.get('mac', '')
+                    if not mac or mac == '00:00:00:00:00:00':
+                        ip_parts = host.split('.')
+                        if len(ip_parts) == 4:
+                            mac = f"00:00:{int(ip_parts[0]):02x}:{int(ip_parts[1]):02x}:{int(ip_parts[2]):02x}:{int(ip_parts[3]):02x}"
+                    if mac:
+                        scanner.db.upsert_host(
+                            mac=mac.lower().strip(),
+                            ip=host,
+                            hostname=host_data.get('hostname', ''),
+                            ports=','.join(map(str, sorted(host_data.get('open_ports', [])))),
+                        )
+                        scanner.db.update_ping_status(mac.lower().strip(), success=True)
+
+                if found > 0:
+                    shared_data.append_subnet_scan_log(
+                        cidr, 'ok',
+                        f'{found} device(s) found on {cidr}',
+                        devices=found,
+                    )
+                else:
+                    shared_data.append_subnet_scan_log(
+                        cidr, 'error',
+                        f'{cidr} \u2014 no devices responded',
+                        devices=0,
+                    )
+                logger.info(f"Subnet trigger scan complete for {cidr}: {found} hosts")
+            except Exception as e:
+                logger.error(f"Subnet trigger scan failed for {cidr}: {e}")
+                shared_data.append_subnet_scan_log(
+                    cidr, 'error', f'Scan failed: {e}',
+                )
+
+        import threading
+        t = threading.Thread(target=_bg_scan, args=(normalised,), daemon=True)
+        t.start()
+        return jsonify({'status': 'scan_triggered', 'cidr': normalised})
+
+    except Exception as e:
+        logger.error(f"Error triggering subnet scan: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/config/scan-subnets/log')
 def get_scan_subnets_log():
     """Return the in-memory subnet scan log (newest last)."""

@@ -15750,8 +15750,24 @@ async function addScanSubnet() {
         }
         input.value = '';
         await loadScanSubnets();
+        // Trigger an immediate scan of the newly added subnet
+        triggerSubnetScan(data.subnets ? data.subnets[data.subnets.length - 1] : cidr);
     } catch (e) {
         if (errorEl) { errorEl.textContent = e.message; errorEl.classList.remove('hidden'); }
+    }
+}
+
+async function triggerSubnetScan(cidr) {
+    try {
+        await networkAwareFetch('/api/config/scan-subnets/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cidr })
+        });
+        // Start polling the scan log so user sees live progress
+        _startSubnetLogPolling();
+    } catch (e) {
+        console.error('triggerSubnetScan error', e);
     }
 }
 
