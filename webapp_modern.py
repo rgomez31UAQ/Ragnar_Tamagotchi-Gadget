@@ -1378,6 +1378,19 @@ def sync_vulnerability_count():
         shared_data.vulnnbr = vuln_count
         logger.debug(f"Updated shared_data.vulnnbr: {old_count} -> {vuln_count}")
 
+        # ── Pushover: new vulnerability notification ──
+        if vuln_count > old_count:
+            try:
+                from pushover_service import PushoverService
+                _po = getattr(shared_data, '_pushover_service', None)
+                if _po is None:
+                    _po = PushoverService(shared_data)
+                    shared_data._pushover_service = _po
+                _po.notify_new_vulnerabilities(vuln_count - old_count,
+                    f"{vuln_count - old_count} new CVE(s) detected (total: {vuln_count})")
+            except Exception as _po_err:
+                logger.debug(f"Pushover vulnerability notification skipped: {_po_err}")
+
         old_host_count = getattr(shared_data, 'vulnerable_host_count', 0)
         shared_data.vulnerable_host_count = len(vulnerable_hosts)
         logger.debug(f"Updated vulnerable host count: {old_host_count} -> {shared_data.vulnerable_host_count}")
@@ -1541,6 +1554,20 @@ def sync_all_counts():
             shared_data.new_targets = len(shared_data.new_target_ips)
             shared_data.lost_targets = len(shared_data.lost_target_ips)
 
+            # ── Pushover: new / lost device notifications ──
+            try:
+                from pushover_service import PushoverService
+                _po = getattr(shared_data, '_pushover_service', None)
+                if _po is None:
+                    _po = PushoverService(shared_data)
+                    shared_data._pushover_service = _po
+                if new_active_hosts:
+                    _po.notify_new_devices(new_active_hosts)
+                if lost_active_hosts:
+                    _po.notify_device_lost(lost_active_hosts)
+            except Exception as _po_err:
+                logger.debug(f"Pushover new/lost device notification skipped: {_po_err}")
+
             if discovered_macs:
                 new_mac_count, points_awarded = shared_data.process_discovered_macs(discovered_macs)
                 if new_mac_count:
@@ -1616,6 +1643,14 @@ def sync_all_counts():
                 if old_creds != cred_count:
                     shared_data.crednbr = cred_count
                     logger.info(f"WEBAPP: Updated credentials: {old_creds} -> {cred_count} from {len(cred_files_found)} files")
+                    # ── Pushover: new credentials notification ──
+                    if cred_count > old_creds:
+                        try:
+                            _po = getattr(shared_data, '_pushover_service', None)
+                            if _po:
+                                _po.notify_new_credentials(cred_count - old_creds, cred_count)
+                        except Exception as _po_err:
+                            logger.debug(f"Pushover credential notification skipped: {_po_err}")
                 else:
                     logger.debug(f"WEBAPP: Credentials stable at: {cred_count} from {len(cred_files_found)} files")
             else:

@@ -3329,6 +3329,9 @@ async function loadConfigData() {
         // Load AI configuration
         loadAIConfiguration(config);
 
+        // Load Pushover configuration
+        loadPushoverConfiguration(config);
+
         // Load hardware profiles
         await loadHardwareProfiles();
 
@@ -9613,6 +9616,138 @@ async function saveAIToken() {
         statusDiv.className = 'p-3 rounded-lg text-sm bg-red-900/30 border border-red-700';
         statusMessage.textContent = `✗ Failed to save API token: ${error.message || 'Please try again.'}`;
         statusDiv.classList.remove('hidden');
+    }
+}
+
+// ─── Pushover Notification Functions ───────────────────────────────────
+async function loadPushoverConfiguration(config) {
+    // Sync toggle checkboxes from config
+    const toggle = document.getElementById('pushover-enabled-toggle');
+    if (toggle) toggle.checked = Boolean(config && config.pushover_enabled);
+
+    const evtMap = {
+        'pushover-notify-new-device': 'pushover_notify_new_device',
+        'pushover-notify-new-vuln': 'pushover_notify_new_vulnerability',
+        'pushover-notify-new-cred': 'pushover_notify_new_credential',
+        'pushover-notify-device-lost': 'pushover_notify_device_lost',
+        'pushover-notify-scan-complete': 'pushover_notify_scan_complete'
+    };
+    for (const [elemId, key] of Object.entries(evtMap)) {
+        const cb = document.getElementById(elemId);
+        if (cb) cb.checked = config && Object.prototype.hasOwnProperty.call(config, key) ? Boolean(config[key]) : false;
+    }
+
+    // Fetch key status from backend
+    try {
+        const ks = await fetchAPI('/api/pushover/keys');
+        const ukInput = document.getElementById('pushover-user-key');
+        const atInput = document.getElementById('pushover-api-token');
+        if (ukInput) {
+            ukInput.value = '';
+            ukInput.placeholder = ks.user_key_configured ? `Configured: ${ks.user_key_preview || '••••'}` : 'Your user key...';
+        }
+        if (atInput) {
+            atInput.value = '';
+            atInput.placeholder = ks.api_token_configured ? `Configured: ${ks.api_token_preview || '••••'}` : 'Your app token...';
+        }
+    } catch (e) {
+        console.error('Failed to fetch Pushover key status:', e);
+    }
+}
+
+async function togglePushoverEnabled() {
+    const cb = document.getElementById('pushover-enabled-toggle');
+    if (!cb) return;
+    try {
+        await postAPI('/api/config', { pushover_enabled: cb.checked });
+        showPushoverStatus(cb.checked ? '✓ Pushover notifications enabled' : 'ℹ Pushover notifications disabled',
+            cb.checked ? 'green' : 'blue');
+    } catch (e) {
+        cb.checked = !cb.checked;
+        showPushoverStatus('✗ Failed to toggle Pushover: ' + (e.message || 'unknown error'), 'red');
+    }
+}
+
+async function savePushoverKeys() {
+    const ukInput = document.getElementById('pushover-user-key');
+    const atInput = document.getElementById('pushover-api-token');
+    const userKey = ukInput ? ukInput.value.trim() : '';
+    const apiToken = atInput ? atInput.value.trim() : '';
+
+    if (!userKey && !apiToken) {
+        showPushoverStatus('⚠ Please enter at least one key.', 'yellow');
+        return;
+    }
+
+    try {
+        const payload = {};
+        if (userKey) payload.user_key = userKey;
+        if (apiToken) payload.api_token = apiToken;
+        const result = await postAPI('/api/pushover/keys', payload);
+        if (result.success) {
+            showPushoverStatus('✓ Pushover keys saved successfully!', 'green');
+            addConsoleMessage('Pushover keys saved', 'success');
+            const config = await fetchAPI('/api/config');
+            await loadPushoverConfiguration(config);
+        } else {
+            throw new Error(result.message || 'Save failed');
+        }
+    } catch (e) {
+        showPushoverStatus('✗ Failed to save keys: ' + (e.message || 'unknown error'), 'red');
+    }
+}
+
+async function savePushoverTriggers() {
+    const evtMap = {
+        'pushover-notify-new-device': 'pushover_notify_new_device',
+        'pushover-notify-new-vuln': 'pushover_notify_new_vulnerability',
+        'pushover-notify-new-cred': 'pushover_notify_new_credential',
+        'pushover-notify-device-lost': 'pushover_notify_device_lost',
+        'pushover-notify-scan-complete': 'pushover_notify_scan_complete'
+    };
+    const payload = {};
+    for (const [elemId, key] of Object.entries(evtMap)) {
+        const cb = document.getElementById(elemId);
+        if (cb) payload[key] = cb.checked;
+    }
+    try {
+        await postAPI('/api/config', payload);
+        showPushoverStatus('✓ Notification triggers updated', 'green', 2000);
+    } catch (e) {
+        showPushoverStatus('✗ Failed to update triggers: ' + (e.message || 'unknown'), 'red');
+    }
+}
+
+async function testPushover() {
+    showPushoverStatus('Sending test notification...', 'blue', 0);
+    try {
+        const result = await postAPI('/api/pushover/test', {});
+        if (result.success) {
+            showPushoverStatus('✓ Test notification sent! Check your device.', 'green', 5000);
+            addConsoleMessage('Pushover test notification sent', 'success');
+        } else {
+            throw new Error(result.message || 'Send failed');
+        }
+    } catch (e) {
+        showPushoverStatus('✗ Test failed: ' + (e.message || 'unknown error'), 'red', 6000);
+    }
+}
+
+function showPushoverStatus(msg, color, timeout) {
+    const div = document.getElementById('pushover-config-status');
+    const span = document.getElementById('pushover-config-status-message');
+    if (!div || !span) return;
+    const colors = {
+        green:  'bg-green-900/30 border border-green-700',
+        red:    'bg-red-900/30 border border-red-700',
+        yellow: 'bg-yellow-900/30 border border-yellow-700',
+        blue:   'bg-blue-900/30 border border-blue-700'
+    };
+    div.className = 'p-3 rounded-lg text-sm ' + (colors[color] || colors.blue);
+    span.textContent = msg;
+    div.classList.remove('hidden');
+    if (timeout !== 0) {
+        setTimeout(() => div.classList.add('hidden'), timeout || 4000);
     }
 }
 
