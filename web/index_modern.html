@@ -892,10 +892,10 @@
                 <div id="map-legend" class="flex flex-wrap items-center gap-3 text-xs text-gray-400 mb-3"></div>
                 <!-- Subnet manager (collapsible) -->
                 <div id="subnet-manager" class="mb-3">
-                    <button onclick="toggleSubnetPanel()" class="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 mb-2 transition-colors">
-                        <svg id="subnet-chevron" class="w-3 h-3 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    <button onclick="toggleSubnetPanel()" class="text-sm text-green-400 hover:text-green-300 flex items-center gap-1.5 mb-2 transition-colors font-medium">
+                        <svg id="subnet-chevron" class="w-4 h-4 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                         <span>Scan Subnets</span>
-                        <span id="subnet-count" class="bg-slate-700 text-gray-300 text-xs px-1.5 rounded-full">0</span>
+                        <span id="subnet-count" class="bg-green-900/50 text-green-300 text-xs px-1.5 rounded-full">0</span>
                     </button>
                     <div id="subnet-panel" class="hidden bg-slate-800/50 rounded-lg p-3 text-sm space-y-2">
                         <p class="text-xs text-gray-500">Add extra subnets so Ragnar discovers devices behind other routers/APs.</p>
