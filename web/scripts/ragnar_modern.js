@@ -3969,14 +3969,22 @@ async function loadPwnConfig() {
         }
         const cfg = response.config;
         _setPwnCfgValue('pwn-cfg-name', cfg['main.name']);
+        _setPwnCfgValue('pwn-cfg-whitelist', cfg['main.whitelist']);
+        _setPwnCfgChecked('pwn-cfg-deauth', cfg['personality.deauth']);
+        _setPwnCfgChecked('pwn-cfg-associate', cfg['personality.associate']);
         _setPwnCfgChecked('pwn-cfg-advertise', cfg['personality.advertise']);
+        _setPwnCfgValue('pwn-cfg-min-rssi', String(cfg['personality.min_rssi']));
+        _setPwnCfgValue('pwn-cfg-channels', cfg['personality.channels']);
+        _setPwnCfgChecked('pwn-cfg-display-enabled', cfg['ui.display.enabled']);
         _setPwnCfgChecked('pwn-cfg-invert', cfg['ui.invert']);
         _setPwnCfgValue('pwn-cfg-rotation', String(cfg['ui.display.rotation']));
         _setPwnCfgValue('pwn-cfg-display-type', cfg['ui.display.type']);
-        _setPwnCfgValue('pwn-cfg-font', cfg['ui.font.name']);
         _setPwnCfgValue('pwn-cfg-web-user', cfg['ui.web.username']);
         _setPwnCfgValue('pwn-cfg-web-pass', cfg['ui.web.password']);
         _setPwnCfgValue('pwn-cfg-web-port', String(cfg['ui.web.port']));
+        _setPwnCfgChecked('pwn-cfg-auto-tune', cfg['main.plugins.auto-tune.enabled']);
+        _setPwnCfgChecked('pwn-cfg-webcfg', cfg['main.plugins.webcfg.enabled']);
+        _setPwnCfgChecked('pwn-cfg-memtemp', cfg['main.plugins.memtemp.enabled']);
         _setPwnCfgChecked('pwn-cfg-grid', cfg['main.plugins.grid.enabled']);
         _setPwnCfgChecked('pwn-cfg-fix-services', cfg['main.plugins.fix_services.enabled']);
         _showPwnConfigAlert(alert, 'Configuration loaded', 'success');
@@ -3995,14 +4003,22 @@ async function savePwnConfig() {
 
         const config = {
             'main.name': document.getElementById('pwn-cfg-name')?.value || 'pwnagotchi',
+            'main.whitelist': document.getElementById('pwn-cfg-whitelist')?.value || '',
+            'personality.deauth': document.getElementById('pwn-cfg-deauth')?.checked || false,
+            'personality.associate': document.getElementById('pwn-cfg-associate')?.checked || false,
+            'personality.advertise': document.getElementById('pwn-cfg-advertise')?.checked || false,
+            'personality.min_rssi': parseInt(document.getElementById('pwn-cfg-min-rssi')?.value || '-200', 10),
+            'personality.channels': document.getElementById('pwn-cfg-channels')?.value || '',
+            'ui.display.enabled': document.getElementById('pwn-cfg-display-enabled')?.checked || false,
             'ui.invert': document.getElementById('pwn-cfg-invert')?.checked || false,
             'ui.display.rotation': parseInt(document.getElementById('pwn-cfg-rotation')?.value || '180', 10),
             'ui.display.type': document.getElementById('pwn-cfg-display-type')?.value || 'waveshare_4',
-            'ui.font.name': document.getElementById('pwn-cfg-font')?.value || 'DejaVuSansMono',
             'ui.web.username': document.getElementById('pwn-cfg-web-user')?.value || 'ragnar',
             'ui.web.password': document.getElementById('pwn-cfg-web-pass')?.value || 'ragnar',
             'ui.web.port': parseInt(document.getElementById('pwn-cfg-web-port')?.value || '8080', 10),
-            'personality.advertise': document.getElementById('pwn-cfg-advertise')?.checked || false,
+            'main.plugins.auto-tune.enabled': document.getElementById('pwn-cfg-auto-tune')?.checked || false,
+            'main.plugins.webcfg.enabled': document.getElementById('pwn-cfg-webcfg')?.checked || false,
+            'main.plugins.memtemp.enabled': document.getElementById('pwn-cfg-memtemp')?.checked || false,
             'main.plugins.grid.enabled': document.getElementById('pwn-cfg-grid')?.checked || false,
             'main.plugins.fix_services.enabled': document.getElementById('pwn-cfg-fix-services')?.checked || false,
         };

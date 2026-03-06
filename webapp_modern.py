@@ -7191,15 +7191,31 @@ def get_pwnagotchi_config():
         ui = doc.get('ui', {})
         ui_display = ui.get('display', {})
         ui_web = ui.get('web', {})
-        ui_font = ui.get('font', {})
         personality = doc.get('personality', {})
-        plugins_grid = main.get('plugins', {}).get('grid', {})
-        plugins_fix = main.get('plugins', {}).get('fix_services', {})
+        plugins = main.get('plugins', {})
+
+        # Parse whitelist (list of SSIDs/BSSIDs)
+        raw_whitelist = main.get('whitelist', [])
+        if isinstance(raw_whitelist, list):
+            whitelist_str = ', '.join(str(s) for s in raw_whitelist)
+        else:
+            whitelist_str = str(raw_whitelist)
+
+        # Parse channels (list of ints)
+        raw_channels = personality.get('channels', [])
+        if isinstance(raw_channels, list):
+            channels_str = ', '.join(str(c) for c in raw_channels)
+        else:
+            channels_str = str(raw_channels)
 
         config = {
             'main.name': str(main.get('name', 'pwnagotchi')),
-            'main.iface': str(main.get('iface', 'wlan0')),
-            'main.mon_iface': str(main.get('mon_iface', 'wlan0mon')),
+            'main.whitelist': whitelist_str,
+            'personality.advertise': bool(personality.get('advertise', False)),
+            'personality.deauth': bool(personality.get('deauth', True)),
+            'personality.associate': bool(personality.get('associate', True)),
+            'personality.min_rssi': int(personality.get('min_rssi', -200)),
+            'personality.channels': channels_str,
             'ui.invert': bool(ui.get('invert', False)),
             'ui.display.enabled': bool(ui_display.get('enabled', True)),
             'ui.display.type': str(ui_display.get('type', 'waveshare_4')),
@@ -7209,10 +7225,11 @@ def get_pwnagotchi_config():
             'ui.web.username': str(ui_web.get('username', 'ragnar')),
             'ui.web.password': str(ui_web.get('password', 'ragnar')),
             'ui.web.port': int(ui_web.get('port', 8080)),
-            'ui.font.name': str(ui_font.get('name', 'DejaVuSansMono')),
-            'personality.advertise': bool(personality.get('advertise', False)),
-            'main.plugins.grid.enabled': bool(plugins_grid.get('enabled', False)),
-            'main.plugins.fix_services.enabled': bool(plugins_fix.get('enabled', False)),
+            'main.plugins.grid.enabled': bool(plugins.get('grid', {}).get('enabled', False)),
+            'main.plugins.fix_services.enabled': bool(plugins.get('fix_services', {}).get('enabled', False)),
+            'main.plugins.auto-tune.enabled': bool(plugins.get('auto-tune', {}).get('enabled', True)),
+            'main.plugins.webcfg.enabled': bool(plugins.get('webcfg', {}).get('enabled', True)),
+            'main.plugins.memtemp.enabled': bool(plugins.get('memtemp', {}).get('enabled', False)),
         }
 
         return jsonify({'success': True, 'config': config})
@@ -7239,16 +7256,24 @@ def save_pwnagotchi_config():
         # Whitelist of allowed settings to prevent arbitrary file writes
         ALLOWED_KEYS = {
             'main.name': str,
+            'main.whitelist': str,       # comma-separated → converted to list
+            'personality.advertise': bool,
+            'personality.deauth': bool,
+            'personality.associate': bool,
+            'personality.min_rssi': int,
+            'personality.channels': str,  # comma-separated → converted to list
             'ui.invert': bool,
+            'ui.display.enabled': bool,
             'ui.display.rotation': int,
             'ui.display.type': str,
             'ui.web.username': str,
             'ui.web.password': str,
             'ui.web.port': int,
-            'ui.font.name': str,
-            'personality.advertise': bool,
             'main.plugins.grid.enabled': bool,
             'main.plugins.fix_services.enabled': bool,
+            'main.plugins.auto-tune.enabled': bool,
+            'main.plugins.webcfg.enabled': bool,
+            'main.plugins.memtemp.enabled': bool,
         }
 
         # Validate keys and types
@@ -7278,6 +7303,24 @@ def save_pwnagotchi_config():
             name = validated['main.name']
             if not name or len(name) > 32 or not re.match(r'^[a-zA-Z0-9_-]+$', name):
                 return jsonify({'success': False, 'error': 'Name must be 1-32 alphanumeric characters (plus - and _)'}), 400
+        if 'personality.min_rssi' in validated:
+            rssi = validated['personality.min_rssi']
+            if rssi < -200 or rssi > 0:
+                return jsonify({'success': False, 'error': 'Min RSSI must be between -200 and 0'}), 400
+
+        # Convert comma-separated strings to TOML lists
+        if 'main.whitelist' in validated:
+            raw = validated['main.whitelist']
+            validated['main.whitelist'] = [s.strip() for s in raw.split(',') if s.strip()] if raw.strip() else []
+        if 'personality.channels' in validated:
+            raw = validated['personality.channels']
+            if raw.strip():
+                try:
+                    validated['personality.channels'] = [int(c.strip()) for c in raw.split(',') if c.strip()]
+                except ValueError:
+                    return jsonify({'success': False, 'error': 'Channels must be comma-separated numbers (e.g. 1, 6, 11)'}), 400
+            else:
+                validated['personality.channels'] = []
 
         try:
             import tomlkit

@@ -3728,12 +3728,38 @@
                         </div>
                         <div id="pwn-config-alert" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <!-- Identity -->
+                            <!-- Identity & Personality -->
                             <div class="space-y-3">
                                 <h5 class="text-sm font-semibold text-fuchsia-300 uppercase tracking-wide">Identity</h5>
                                 <div>
                                     <label class="block text-xs text-gray-400 mb-1">Device Name</label>
                                     <input id="pwn-cfg-name" type="text" maxlength="32" pattern="[a-zA-Z0-9_-]+" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none" placeholder="RagnarPwn">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Whitelist (SSIDs/BSSIDs)</label>
+                                    <input id="pwn-cfg-whitelist" type="text" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none" placeholder="MyHomeWiFi, 00:11:22:33:44:55">
+                                    <p class="text-xs text-gray-500 mt-1">Comma-separated networks to ignore</p>
+                                </div>
+                                <h5 class="text-sm font-semibold text-fuchsia-300 uppercase tracking-wide pt-2">Personality</h5>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <label class="text-xs text-gray-400">Deauth Attacks</label>
+                                        <p class="text-xs text-gray-500">Send deauth to capture handshakes</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-deauth" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <label class="text-xs text-gray-400">Associate</label>
+                                        <p class="text-xs text-gray-500">Connect to APs to gather data</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-associate" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <label class="text-xs text-gray-400">Advertise</label>
@@ -3742,10 +3768,30 @@
                                         <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
                                     </label>
                                 </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Min RSSI (dBm)</label>
+                                    <input id="pwn-cfg-min-rssi" type="number" min="-200" max="0" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none" placeholder="-200">
+                                    <p class="text-xs text-gray-500 mt-1">-200 = no limit, -75 = nearby only</p>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-400 mb-1">Channels</label>
+                                    <input id="pwn-cfg-channels" type="text" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none" placeholder="1, 6, 11">
+                                    <p class="text-xs text-gray-500 mt-1">Comma-separated, empty = all channels</p>
+                                </div>
                             </div>
                             <!-- Display -->
                             <div class="space-y-3">
                                 <h5 class="text-sm font-semibold text-fuchsia-300 uppercase tracking-wide">Display</h5>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <label class="text-xs text-gray-400">Display Enabled</label>
+                                        <p class="text-xs text-gray-500">Activate the physical e-ink screen</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-display-enabled" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
+                                </div>
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <label class="text-xs text-gray-400">Invert Display</label>
@@ -3788,10 +3834,6 @@
                                         <option value="dfrobot_2">DFRobot v2</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label class="block text-xs text-gray-400 mb-1">Font</label>
-                                    <input id="pwn-cfg-font" type="text" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none" placeholder="DejaVuSansMono">
-                                </div>
                             </div>
                             <!-- Web UI & Plugins -->
                             <div class="space-y-3">
@@ -3810,6 +3852,27 @@
                                 </div>
                                 <h5 class="text-sm font-semibold text-fuchsia-300 uppercase tracking-wide pt-2">Plugins</h5>
                                 <div class="flex items-center justify-between">
+                                    <label class="text-xs text-gray-400">Auto-Tune</label>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-auto-tune" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="text-xs text-gray-400">Web Config (webcfg)</label>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-webcfg" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="text-xs text-gray-400">Mem/Temp Display</label>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-memtemp" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
                                     <label class="text-xs text-gray-400">Grid Plugin</label>
                                     <label class="relative inline-flex items-center cursor-pointer">
                                         <input type="checkbox" id="pwn-cfg-grid" class="sr-only peer">
@@ -3817,7 +3880,7 @@
                                     </label>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <label class="text-xs text-gray-400">Fix Services Plugin</label>
+                                    <label class="text-xs text-gray-400">Fix Services</label>
                                     <label class="relative inline-flex items-center cursor-pointer">
                                         <input type="checkbox" id="pwn-cfg-fix-services" class="sr-only peer">
                                         <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
