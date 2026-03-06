@@ -3746,13 +3746,15 @@
                             <!-- Display -->
                             <div class="space-y-3">
                                 <h5 class="text-sm font-semibold text-fuchsia-300 uppercase tracking-wide">Display</h5>
-                                <div>
-                                    <label class="block text-xs text-gray-400 mb-1">Color Mode</label>
-                                    <select id="pwn-cfg-color" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none">
-                                        <option value="black">Black on White</option>
-                                        <option value="white">White on Black</option>
-                                    </select>
-                                    <p class="text-xs text-gray-500 mt-1">"black" = black ink on white background (default e-paper). "white" = inverted.</p>
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <label class="text-xs text-gray-400">Invert Display</label>
+                                        <p class="text-xs text-gray-500">White text on black background</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="pwn-cfg-invert" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-fuchsia-600"></div>
+                                    </label>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-400 mb-1">Rotation</label>
@@ -3766,17 +3768,19 @@
                                 <div>
                                     <label class="block text-xs text-gray-400 mb-1">Display Type</label>
                                     <select id="pwn-cfg-display-type" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-fuchsia-500 focus:outline-none">
-                                        <option value="waveshare_4">Waveshare v4</option>
-                                        <option value="waveshare_3">Waveshare v3</option>
-                                        <option value="waveshare_2">Waveshare v2</option>
-                                        <option value="waveshare_1">Waveshare v1</option>
+                                        <option value="waveshare_4">Waveshare 2.13" v4</option>
+                                        <option value="waveshare_3">Waveshare 2.13" v3</option>
+                                        <option value="waveshare_2">Waveshare 2.13" v2</option>
+                                        <option value="waveshare_1">Waveshare 2.13" v1</option>
                                         <option value="waveshare27inch">Waveshare 2.7"</option>
+                                        <option value="waveshare29inch">Waveshare 2.9"</option>
+                                        <option value="waveshare37inch">Waveshare 3.7"</option>
+                                        <option value="ws_154inch">Waveshare 1.54"</option>
                                         <option value="inky">Inky pHAT</option>
                                         <option value="papirus">Papirus</option>
                                         <option value="oledhat">OLED HAT</option>
                                         <option value="lcdhat">LCD HAT</option>
                                         <option value="dfrobot_v2">DFRobot v2</option>
-                                        <option value="ws_154inch">Waveshare 1.54"</option>
                                     </select>
                                 </div>
                                 <div>

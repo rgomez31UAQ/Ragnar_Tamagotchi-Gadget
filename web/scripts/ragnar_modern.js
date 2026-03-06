@@ -3970,7 +3970,7 @@ async function loadPwnConfig() {
         const cfg = response.config;
         _setPwnCfgValue('pwn-cfg-name', cfg['main.name']);
         _setPwnCfgChecked('pwn-cfg-advertise', cfg['personality.advertise']);
-        _setPwnCfgValue('pwn-cfg-color', cfg['ui.display.color']);
+        _setPwnCfgChecked('pwn-cfg-invert', cfg['ui.display.color'] === 'white');
         _setPwnCfgValue('pwn-cfg-rotation', String(cfg['ui.display.rotation']));
         _setPwnCfgValue('pwn-cfg-display-type', cfg['ui.display.type']);
         _setPwnCfgValue('pwn-cfg-font', cfg['ui.font.name']);
@@ -3995,7 +3995,7 @@ async function savePwnConfig() {
 
         const config = {
             'main.name': document.getElementById('pwn-cfg-name')?.value || 'pwnagotchi',
-            'ui.display.color': document.getElementById('pwn-cfg-color')?.value || 'black',
+            'ui.display.color': document.getElementById('pwn-cfg-invert')?.checked ? 'white' : 'black',
             'ui.display.rotation': parseInt(document.getElementById('pwn-cfg-rotation')?.value || '180', 10),
             'ui.display.type': document.getElementById('pwn-cfg-display-type')?.value || 'waveshare_4',
             'ui.font.name': document.getElementById('pwn-cfg-font')?.value || 'DejaVuSansMono',
