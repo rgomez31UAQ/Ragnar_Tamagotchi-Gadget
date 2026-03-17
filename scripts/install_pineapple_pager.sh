@@ -728,8 +728,10 @@ VERIFY_RESULT=$(ssh $SSH_OPTS "${PAGER_USER}@${PAGER_IP}" "
     export PYTHONPATH=\"${PAGER_PAYLOAD_DIR}/lib:${PAGER_PAYLOAD_DIR}:\$PYTHONPATH\"
     export LD_LIBRARY_PATH=\"/root/lib:${PAGER_PAYLOAD_DIR}/lib:${PAGER_PAYLOAD_DIR}:\$LD_LIBRARY_PATH\"
     
-    python3 -c 'from pagerctl import Pager; print(\"PAGERCTL_OK\")' 2>/dev/null || echo 'PAGERCTL_IMPORT_FAILED'    python3 -c 'import nmap; nmap.PortScanner(); print("NMAP_PY_OK")' 2>/dev/null || echo 'NMAP_PY_FAILED'
-    python3 -c 'import logging, asyncio, ctypes, sqlite3, xml.etree.ElementTree; print("STDLIB_OK")' 2>/dev/null || echo 'STDLIB_FAILED'    
+    python3 -c 'from pagerctl import Pager; print(\"PAGERCTL_OK\")' 2>/dev/null || echo 'PAGERCTL_IMPORT_FAILED'
+    python3 -c 'import nmap; nmap.PortScanner(); print(\"NMAP_PY_OK\")' 2>/dev/null || echo 'NMAP_PY_FAILED'
+    python3 -c 'import logging, asyncio, ctypes, sqlite3, xml.etree.ElementTree; print(\"STDLIB_OK\")' 2>/dev/null || echo 'STDLIB_FAILED'
+
     if [ \$errors -eq 0 ]; then
         echo 'ALL_OK'
     else
