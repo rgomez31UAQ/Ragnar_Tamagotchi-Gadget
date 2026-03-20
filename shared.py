@@ -103,6 +103,8 @@ DISPLAY_PROFILES = {
     "ssd1306":     {"ref_width": 128, "ref_height": 64, "default_flip": False},
     "max7219_4panel": {"ref_width": 32,  "ref_height": 8, "default_flip": False},
     "max7219_8panel": {"ref_width": 64,  "ref_height": 8, "default_flip": False},
+    # Waveshare 4.26" 800x480 e-paper display
+    "epd4in26":        {"ref_width": DESIGN_REF_WIDTH, "ref_height": DESIGN_REF_HEIGHT, "default_flip": False},
 }
 
 
