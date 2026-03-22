@@ -666,6 +666,13 @@
     "handler": "reboot_system"
   },
   {
+    "route": "/api/system/shutdown",
+    "methods": [
+      "POST"
+    ],
+    "handler": "shutdown_system"
+  },
+  {
     "route": "/api/system/restart-service",
     "methods": [
       "POST"
