@@ -862,6 +862,60 @@ function initializeMobileMenu() {
             mobileMenu.classList.toggle('hidden');
         });
     }
+
+    // Auto-collapse: switch between desktop nav and hamburger based on overflow
+    const desktopNav = document.getElementById('desktop-nav');
+    if (!desktopNav || !menuBtn) return;
+
+    function updateNavMode() {
+        // Temporarily show desktop nav offscreen to measure natural width
+        desktopNav.style.position = 'absolute';
+        desktopNav.style.visibility = 'hidden';
+        desktopNav.style.whiteSpace = 'nowrap';
+        desktopNav.classList.remove('hidden');
+        desktopNav.classList.add('flex');
+
+        // Sum widths of visible buttons
+        let totalWidth = 0;
+        const gap = 4; // gap-1 = 0.25rem = 4px
+        let visibleCount = 0;
+        for (const btn of desktopNav.children) {
+            if (!btn.classList.contains('hidden')) {
+                totalWidth += btn.scrollWidth;
+                visibleCount++;
+            }
+        }
+        totalWidth += Math.max(0, visibleCount - 1) * gap;
+
+        // Reset temp styles
+        desktopNav.style.position = '';
+        desktopNav.style.visibility = '';
+        desktopNav.style.whiteSpace = '';
+
+        // Available space = parent width minus logo area
+        const parent = desktopNav.parentElement;
+        const logo = parent ? parent.querySelector('.flex.items-center.space-x-3') : null;
+        const logoWidth = logo ? logo.offsetWidth + 24 : 200; // 24px gap
+        const available = (parent ? parent.offsetWidth : window.innerWidth) - logoWidth - 48; // 48px for hamburger btn
+
+        if (totalWidth > available) {
+            // Too wide — show hamburger
+            desktopNav.classList.add('hidden');
+            desktopNav.classList.remove('flex');
+            menuBtn.classList.remove('hidden');
+        } else {
+            // Fits — show desktop nav
+            desktopNav.classList.remove('hidden');
+            desktopNav.classList.add('flex');
+            menuBtn.classList.add('hidden');
+            if (mobileMenu) mobileMenu.classList.add('hidden');
+        }
+    }
+
+    // Run on load, resize, and expose globally for dynamic item visibility changes
+    updateNavMode();
+    window.addEventListener('resize', updateNavMode);
+    window._updateNavMode = updateNavMode;
 }
 
 function initializeThreatIntelFilters() {
@@ -5100,6 +5154,7 @@ function applyHeadlessVisibility(isHeadless) {
         
         console.log(`[Headless] Restored ${displayElements.length} Display UI elements`);
     }
+    if (window._updateNavMode) window._updateNavMode();
 }
 
 // ============================================================================
@@ -8507,6 +8562,7 @@ function syncManualModeUI(isManualMode) {
     document.querySelectorAll('.pentest-nav-btn').forEach(btn => {
         btn.classList.toggle('hidden', !isManualMode);
     });
+    if (window._updateNavMode) window._updateNavMode();
 
     if (!isManualMode && currentTab === 'pentest') {
         showTab('dashboard');
@@ -12940,6 +12996,7 @@ async function checkServerCapabilities() {
         } else if (!data.success) {
             console.error('[ServerMode] API error:', data.error);
         }
+        if (window._updateNavMode) window._updateNavMode();
     } catch (error) {
         console.warn('[ServerMode] Could not check server capabilities:', error);
     }

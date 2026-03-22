@@ -249,7 +249,7 @@
                 </div>
                 
                 <!-- Navigation Links -->
-                <div class="hidden nav:flex flex-wrap gap-1">
+                <div id="desktop-nav" class="hidden flex-wrap gap-1">
                     <button onclick="showTab('dashboard')" class="nav-btn px-2 py-1.5 rounded-lg hover:bg-slate-700 transition-colors text-sm whitespace-nowrap" data-tab="dashboard">
                         Dashboard
                     </button>
@@ -318,7 +318,7 @@
                 </div>
                 
                 <!-- Mobile Menu Button -->
-                <button id="mobile-menu-btn" class="nav:hidden p-2 rounded-lg hover:bg-slate-700">
+                <button id="mobile-menu-btn" class="hidden p-2 rounded-lg hover:bg-slate-700">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                     </svg>
@@ -327,7 +327,7 @@
         </div>
         
         <!-- Mobile Menu -->
-        <div id="mobile-menu" class="hidden nav:hidden border-t border-slate-700">
+        <div id="mobile-menu" class="hidden border-t border-slate-700">
             <div class="px-2 pt-2 pb-3 space-y-1">
                 <button onclick="showTab('dashboard')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700">Dashboard</button>
                 <button onclick="showTab('network')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700">Network</button>

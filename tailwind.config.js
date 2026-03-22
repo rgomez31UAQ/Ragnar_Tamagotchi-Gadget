@@ -18,9 +18,6 @@ module.exports = {
           900: '#0c4a6e',
         }
       },
-      screens: {
-        'nav': '1000px',
-      }
     }
   },
   plugins: []
