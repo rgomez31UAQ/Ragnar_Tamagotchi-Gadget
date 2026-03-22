@@ -5810,6 +5810,34 @@ async function rebootSystem() {
     }
 }
 
+async function shutdownSystem() {
+    if (!confirm('⚠️ This will SHUT DOWN the system completely.\n\nYou will need physical access to power the device back on.\n\nContinue?')) {
+        return;
+    }
+    
+    try {
+        addConsoleMessage('Initiating system shutdown...', 'warning');
+        updateElement('service-status', 'Shutting down...');
+        document.getElementById('service-status').className = 'text-sm px-2 py-1 rounded bg-red-700 text-red-300';
+        
+        const data = await postAPI('/api/system/shutdown', {});
+        
+        if (data.success) {
+            addConsoleMessage('System shutdown initiated', 'success');
+            addConsoleMessage('Device will power off shortly...', 'warning');
+            updateConnectionStatus(false);
+        } else {
+            addConsoleMessage(`Shutdown failed: ${data.error || 'Unknown error'}`, 'error');
+            updateElement('service-status', 'Running');
+            document.getElementById('service-status').className = 'text-sm px-2 py-1 rounded bg-green-700 text-green-300';
+        }
+        
+    } catch (error) {
+        console.error('Error shutting down system:', error);
+        addConsoleMessage('Failed to initiate system shutdown', 'error');
+    }
+}
+
 // ============================================================================
 // DATA MANAGEMENT FUNCTIONS
 // ============================================================================

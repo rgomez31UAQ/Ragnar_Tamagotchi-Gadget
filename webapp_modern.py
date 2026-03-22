@@ -7683,6 +7683,34 @@ def reboot_system():
         logger.error(f"Error rebooting system: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/system/shutdown', methods=['POST'])
+def shutdown_system():
+    """Shut down the entire system"""
+    try:
+        import subprocess
+        
+        # Schedule shutdown after a short delay to allow response to be sent
+        def shutdown_delayed():
+            import time
+            time.sleep(3)  # Give time for response to be sent
+            try:
+                subprocess.run(['sudo', 'shutdown', '-h', 'now'], check=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to shut down system: {e}")
+        
+        # Start shutdown in background thread
+        import threading
+        threading.Thread(target=shutdown_delayed, daemon=True).start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'System shutdown initiated'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error shutting down system: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ============================================================================
 # DATA MANAGEMENT ENDPOINTS
 # ============================================================================
