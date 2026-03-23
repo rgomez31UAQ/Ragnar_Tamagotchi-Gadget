@@ -10192,8 +10192,6 @@ function displayConfigForm(config) {
                             <input type="number" name="${key}" id="cfg-spi-clock-input"
                                    class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono"
                                    value="${clockMhz}" min="0.5" max="4" step="0.5">
-                            <p class="text-xs text-gray-500">2 MHz recommended with PiSugar. Drop to 1 MHz if pixels are still corrupted. Takes effect after service restart.</p>
->>>>>>> upstream/main
                         </div>
                     `;
                 } else {
