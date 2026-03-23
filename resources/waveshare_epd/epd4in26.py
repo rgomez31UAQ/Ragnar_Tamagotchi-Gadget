@@ -76,7 +76,7 @@ class EPD:
     def ReadBusy(self, timeout=30):
         logger.debug("e-Paper busy")
         deadline = time.time() + timeout
-        while(epdconfig.digital_read(self.busy_pin) == 0):      # 0: busy, 1: idle/ready
+        while(epdconfig.digital_read(self.busy_pin) == 1):      # 0: idle, 1: busy
             if time.time() > deadline:
                 logger.warning(f"ReadBusy timeout after {timeout}s — display may not be connected or responding")
                 break
