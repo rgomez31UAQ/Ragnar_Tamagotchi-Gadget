@@ -111,12 +111,12 @@ class RaspberryPi:
         else:
             # SPI device, bus = 0, device = 0
             self.SPI.open(0, 0)
-            # Read SPI clock speed from shared config (default 2 MHz for PiSugar signal integrity)
+            # Read SPI clock speed from shared config (default 4 MHz — matches Waveshare official)
             self.SPI.max_speed_hz = self._read_spi_clock_hz()
             self.SPI.mode = 0b00
         return 0
 
-    def _read_spi_clock_hz(self, default_mhz=2):
+    def _read_spi_clock_hz(self, default_mhz=4):
         """Read spi_clock_mhz from shared_config.json; fall back to default_mhz."""
         try:
             import json

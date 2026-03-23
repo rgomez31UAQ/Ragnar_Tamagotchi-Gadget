@@ -1034,9 +1034,11 @@ def _show_epaper_transition(message: str) -> None:
         draw.text((10, width // 2 - 20), message, font=font, fill=0)
         draw.text((10, width // 2 + 5), "Please wait...", font=font_small, fill=0)
 
-        # Handle screen flip
-        if shared_data.config.get('screen_reversed', False):
-            image = image.rotate(180)
+        # Handle screen rotation
+        from shared import normalize_rotation
+        _rotation = normalize_rotation(shared_data.config.get('screen_reversed', 0))
+        if _rotation:
+            image = image.rotate(_rotation, expand=True)
 
         epd_helper.display_full(image)
         logger.info(f"E-paper transition: {message}")
@@ -2989,7 +2991,8 @@ def update_config():
         shared_data.save_config()
 
         # Reflect orientation changes immediately for both hardware and screenshots
-        shared_data.screen_reversed = bool(shared_data.config.get('screen_reversed', False))
+        from shared import normalize_rotation
+        shared_data.screen_reversed = normalize_rotation(shared_data.config.get('screen_reversed', 0))
         shared_data.web_screen_reversed = shared_data.screen_reversed
         
         # Reload AI service if ai_enabled was changed
@@ -8706,10 +8709,24 @@ def get_epaper_display():
         if os.path.exists(display_image_path):
             # Read and encode the image
             with Image.open(display_image_path) as img:
+                orig_w, orig_h = img.size
+
                 # Convert to RGB if needed
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
-                
+
+                # Upscale small e-paper images so they aren't pixelated
+                # in the browser. Target: shortest side >= 600px.
+                MIN_DIM = 600
+                if min(orig_w, orig_h) < MIN_DIM:
+                    scale = max(MIN_DIM / orig_w, MIN_DIM / orig_h)
+                    scale = int(scale) if scale == int(scale) else int(scale) + 1
+                    if scale >= 2:
+                        img = img.resize(
+                            (orig_w * scale, orig_h * scale),
+                            Image.NEAREST,
+                        )
+
                 # Save to bytes
                 img_byte_arr = io.BytesIO()
                 img.save(img_byte_arr, format='PNG')
@@ -8721,8 +8738,8 @@ def get_epaper_display():
                 return jsonify({
                     'image': f"data:image/png;base64,{img_base64}",
                     'timestamp': int(os.path.getctime(display_image_path)),
-                    'width': img.width,
-                    'height': img.height,
+                    'width': orig_w,
+                    'height': orig_h,
                     'status_text': safe_str(shared_data.ragnarstatustext),
                     'status_text2': safe_str(shared_data.ragnarstatustext2)
                 })

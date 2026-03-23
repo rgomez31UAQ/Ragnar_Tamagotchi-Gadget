@@ -275,7 +275,6 @@ strong {
     display: block;
     margin-top: auto;
     min-height: 500px; /* Ensure the e-paper display is at least 500px tall */
-    image-rendering: crisp-edges; /* Make the e-paper display crisp */
 }
 
 
@@ -736,7 +735,6 @@ body, html {
     width: 100%; /* Use full width instead of 33% */
     height: auto; 
     min-height: 200px; /* Set minimum height for e-paper display preview */
-    image-rendering: crisp-edges; /* Make the e-paper display crisp */
 }
 
 /* Wi-Fi Status Bar */
