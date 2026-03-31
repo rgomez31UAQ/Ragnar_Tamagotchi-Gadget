@@ -223,6 +223,8 @@ sudo /home/ragnar/Ragnar/scripts/fix_services.sh
 
 ## 🍍 WiFi Pineapple Pager
 
+> **Attribution:** The WiFi Pineapple Pager port of Ragnar is based on the original work of **brAinphreAk** — the developer who first ported Bjorn to the Pineapple Pager as [PagerBjorn / Loki](https://github.com/pineapple-pager-projects/pineapple_pager_loki). The pager adaptation layer (display system, hardware control wrapper, MIPS-compiled binaries and libraries) originated in that project. Full credit and thanks to brAinphreAk for making pager hardware support possible.
+
 Ragnar can be deployed to the WiFi Pineapple Pager as a native payload with full-color LCD display, button controls, and LED status indicators.
 
 **Features on Pager:**
@@ -264,6 +266,17 @@ See [Contributing Docs](docs/CONTRIBUTING.md) and [Code of Conduct](docs/CODE_OF
 
 - **Report Issues**: Via [GitHub Issues](https://github.com/PierreGode/Ragnar/issues)
 - **Author**: PierreGode — [PierreGode/Ragnar](https://github.com/PierreGode/Ragnar)
+
+---
+
+## 🙏 Credits & Attribution
+
+Ragnar is built on the shoulders of great work by others:
+
+| Project | Author | Role in Ragnar |
+|---|---|---|
+| [Bjorn](https://github.com/infinition/Bjorn) | infinition | Original project that Ragnar is forked from |
+| [PagerBjorn / Loki](https://github.com/pineapple-pager-projects/pineapple_pager_loki) | [brAinphreAk](https://github.com/brainphreak) | WiFi Pineapple Pager adaptation layer — display system, hardware control wrapper (`pagerctl.py`), pager menu UI, and all MIPS-compiled binaries and libraries |
 
 ---
 
